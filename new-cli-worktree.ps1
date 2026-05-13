@@ -4,18 +4,25 @@ param(
 )
 
 function Read-CliChoice {
+    $options = @("copilot", "codex", "claude")
+    Write-Host ""
+    Write-Host "Select CLI agent:" -ForegroundColor Cyan
+    Write-Host "  1) copilot"
+    Write-Host "  2) codex"
+    Write-Host "  3) claude"
+    Write-Host ""
+
     while ($true) {
-        $answer = Read-Host "Use which CLI? (copilot/codex/claude)"
-        if (-not $answer) {
-            continue
-        }
+        Write-Host -NoNewline "Enter 1, 2, or 3: "
+        $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+        Write-Host $key.Character
 
-        $normalized = $answer.Trim().ToLowerInvariant()
-        if ($normalized -in @("copilot", "codex", "claude")) {
-            return $normalized
+        switch ($key.Character) {
+            '1' { return $options[0] }
+            '2' { return $options[1] }
+            '3' { return $options[2] }
+            default { Write-Host "Please press 1, 2, or 3." -ForegroundColor Yellow }
         }
-
-        Write-Host "Please type 'copilot', 'codex', or 'claude'." -ForegroundColor Yellow
     }
 }
 
