@@ -59,32 +59,102 @@ $parentDir = Split-Path -Path $repoRoot -Parent
 $repoName = Split-Path -Path $repoRoot -Leaf
 $worktreeDir = Join-Path -Path $parentDir -ChildPath "$repoName-$Cli"
 
-if (Test-Path -LiteralPath $worktreeDir) {
-    Write-Error "Target worktree directory already exists: $worktreeDir"
-    exit 1
+function Normalize-PathForComparison {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    return ([System.IO.Path]::GetFullPath($Path)).TrimEnd('\\').ToLowerInvariant()
 }
 
-& git -C $repoRoot show-ref --verify --quiet "refs/heads/$newBranch"
-$branchExists = ($LASTEXITCODE -eq 0)
+function Get-RegisteredWorktrees {
+    param([Parameter(Mandatory = $true)][string]$RepoRoot)
 
-if ($branchExists) {
-    Write-Host "Branch exists, creating worktree on '$newBranch' at '$worktreeDir'."
-    & git -C $repoRoot worktree add "$worktreeDir" "$newBranch"
+    $porcelain = & git -C $RepoRoot worktree list --porcelain 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return @()
+    }
+
+    $entries = @()
+    $current = $null
+    foreach ($line in $porcelain) {
+        if ($line.StartsWith("worktree ")) {
+            if ($null -ne $current) {
+                $entries += [pscustomobject]$current
+            }
+            $current = @{
+                Path = $line.Substring(9).Trim()
+                Branch = $null
+            }
+            continue
+        }
+
+        if ($null -ne $current -and $line.StartsWith("branch ")) {
+            $current.Branch = $line.Substring(7).Trim()
+            continue
+        }
+
+        if ([string]::IsNullOrWhiteSpace($line) -and $null -ne $current) {
+            $entries += [pscustomobject]$current
+            $current = $null
+        }
+    }
+
+    if ($null -ne $current) {
+        $entries += [pscustomobject]$current
+    }
+
+    return $entries
+}
+
+$registeredWorktrees = Get-RegisteredWorktrees -RepoRoot $repoRoot
+$branchRef = "refs/heads/$newBranch"
+$normalizedTarget = Normalize-PathForComparison -Path $worktreeDir
+
+$existingWorktreeByPath = $registeredWorktrees |
+    Where-Object { (Normalize-PathForComparison -Path $_.Path) -eq $normalizedTarget } |
+    Select-Object -First 1
+
+$existingWorktreeByBranch = $registeredWorktrees |
+    Where-Object { $_.Branch -eq $branchRef } |
+    Select-Object -First 1
+
+$worktreeToUse = $null
+
+if ($existingWorktreeByPath) {
+    $worktreeToUse = $existingWorktreeByPath.Path
+    Write-Host "Reusing existing worktree at '$worktreeToUse'."
+}
+elseif (Test-Path -LiteralPath $worktreeDir) {
+    Write-Error "Target directory exists but is not a registered git worktree: $worktreeDir"
+    exit 1
+}
+elseif ($existingWorktreeByBranch) {
+    $worktreeToUse = $existingWorktreeByBranch.Path
+    Write-Host "Reusing existing worktree for '$newBranch' at '$worktreeToUse'."
 }
 else {
-    Write-Host "Creating branch '$newBranch' from '$currentBranch' and adding worktree at '$worktreeDir'."
-    & git -C $repoRoot worktree add -b "$newBranch" "$worktreeDir" "$currentBranch"
-}
+    & git -C $repoRoot show-ref --verify --quiet "refs/heads/$newBranch"
+    $branchExists = ($LASTEXITCODE -eq 0)
 
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "Failed to create worktree."
-    exit 1
+    if ($branchExists) {
+        Write-Host "Branch exists, creating worktree on '$newBranch' at '$worktreeDir'."
+        & git -C $repoRoot worktree add "$worktreeDir" "$newBranch"
+    }
+    else {
+        Write-Host "Creating branch '$newBranch' from '$currentBranch' and adding worktree at '$worktreeDir'."
+        & git -C $repoRoot worktree add -b "$newBranch" "$worktreeDir" "$currentBranch"
+    }
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to create worktree."
+        exit 1
+    }
+
+    $worktreeToUse = $worktreeDir
 }
 
 Write-Host "Done."
 Write-Host "Repository : $repoRoot"
 Write-Host "Branch     : $newBranch"
-Write-Host "Worktree   : $worktreeDir"
+Write-Host "Worktree   : $worktreeToUse"
 
 $cliCommand = switch ($Cli) {
     "codex" { "codex" }
@@ -95,12 +165,12 @@ $cliExecutable = Get-Command -Name $cliCommand -ErrorAction SilentlyContinue
 
 if (-not $cliExecutable) {
     Write-Warning "CLI command '$cliCommand' was not found on PATH."
-    Write-Warning "Worktree was created successfully at: $worktreeDir"
+    Write-Warning "Worktree is ready at: $worktreeToUse"
     exit 0
 }
 
-Write-Host "Starting '$cliCommand' in '$worktreeDir'..."
-Push-Location -LiteralPath $worktreeDir
+Write-Host "Starting '$cliCommand' in '$worktreeToUse'..."
+Push-Location -LiteralPath $worktreeToUse
 try {
     & $cliCommand
 }
