@@ -5,10 +5,16 @@ A PowerShell script that prepares a Git worktree for an AI coding agent (GitHub 
 ## Usage
 
 ```powershell
-.\new-cli-worktree.ps1 [-Cli <copilot|codex|claude>]
+.\new-cli-worktree.ps1 [-repopath <path>] [-Cli <copilot|codex|claude>]
 ```
 
+If `-repopath` is omitted or empty, the script uses the current working directory.
 If `-Cli` is omitted, the script will prompt you interactively.
+
+### Parameters
+
+- `-repopath <path>`: Path to the git repository to use.
+- `-Cli <copilot|codex|claude>`: CLI agent to start.
 
 ## What it does
 
@@ -31,4 +37,22 @@ If `-Cli` is omitted, the script will prompt you interactively.
 # From inside your feature branch
 .\new-cli-worktree.ps1 -Cli copilot
 # Creates branch 'my-feature-copilot' and opens Copilot in ../myrepo-copilot
+```
+
+## SmartGit Integration
+
+This is how to call the script from SmartGit:
+
+Open Edit, Preferences, Tools 
+
+```cmd
+cmd.exe
+/c start pwsh.exe C:\repos\your-user\prepareworktreeforagent\new-cli-worktree.ps1 -repopath "${filePath}" -noexit
+```
+
+Note: if you need PowerShell to stay open reliably, place `-NoExit` before the script path:
+
+```cmd
+cmd.exe 
+/c start pwsh.exe -NoExit C:\repos\your-user\prepareworktreeforagent\new-cli-worktree.ps1 -repopath "${filePath}"
 ```
