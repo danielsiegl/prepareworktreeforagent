@@ -43,11 +43,13 @@ If `-Cli` is omitted, the script will prompt you interactively.
 
 This is how to call the script from SmartGit:
 
-Open Edit, Preferences, Tools 
+Open Edit, Preferences, Tools and Create a new entry or copy the "Open in Powershell" and start from there.
+
+SmartGit help page for this section: [Preferences -> Tools](https://docs.syntevo.com/SmartGit/Latest/Manual/GUI/Preferences/Tools.html).
 
 ```cmd
 cmd.exe
-/c start pwsh.exe C:\repos\your-user\prepareworktreeforagent\new-cli-worktree.ps1 -repopath "${filePath}" -noexit
+/c start pwsh.exe C:\repos\your-user\prepareworktreeforagent\new-cli-worktree.ps1 -repopath "${filePath}"
 ```
 
 Note: if you need PowerShell to stay open reliably, place `-NoExit` before the script path:
