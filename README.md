@@ -2,6 +2,14 @@
 
 A PowerShell script that prepares a Git worktree for an AI coding agent (GitHub Copilot, OpenAI Codex, or Anthropic Claude). It creates a new branch on top of your current feature branch and checks it out as a separate worktree, then launches the chosen CLI agent inside that directory.
 
+## Issue 
+
+* can't handle existing worktree:
+pwsh C:\repos\danielsiegl\prepareworktreeforagent\new-cli-worktree.ps1 -repopath "C:\repos\danielsiegl\ai-commit-message-benchmarks"
+* update docs
+* if repopath is not set we should use the current location
+
+
 ## Usage
 
 ```powershell

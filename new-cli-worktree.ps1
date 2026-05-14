@@ -1,4 +1,5 @@
 param(
+    [string]$repopath,
     [ValidateSet("copilot", "codex", "claude")]
     [string]$Cli
 )
@@ -26,9 +27,13 @@ function Read-CliChoice {
     }
 }
 
+Write-Output "Using git repo $repopath"
+Set-Location $repopath
+
 if (-not $Cli) {
     $Cli = Read-CliChoice
 }
+
 
 $repoRoot = (& git rev-parse --show-toplevel 2>$null)
 if ($LASTEXITCODE -ne 0 -or -not $repoRoot) {
