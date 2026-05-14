@@ -27,6 +27,10 @@ function Read-CliChoice {
     }
 }
 
+if ([string]::IsNullOrWhiteSpace($repopath)) {
+    $repopath = (Get-Location).Path
+}
+
 Write-Output "Using git repo $repopath"
 Set-Location $repopath
 
