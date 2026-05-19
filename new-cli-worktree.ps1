@@ -1,3 +1,25 @@
+<#
+.SYNOPSIS
+    Creates or reuses a git worktree and launches a CLI agent (copilot, codex, or claude).
+
+.DESCRIPTION
+    Given a repository path and a CLI agent name, this script creates a new git branch
+    and worktree (or reuses an existing one) and then starts the selected CLI agent
+    inside that worktree directory.
+
+.PARAMETER repopath
+    Path to the git repository. Defaults to the current working directory.
+
+.PARAMETER Cli
+    The CLI agent to launch. Valid values: copilot, codex, claude.
+
+.EXAMPLE
+    .\new-cli-worktree.ps1 -repopath "C:\repos\myrepo" -Cli copilot
+
+.EXAMPLE
+    .\new-cli-worktree.ps1
+    # Prompts interactively for CLI agent selection.
+#>
 param(
     [string]$repopath,
     [ValidateSet("copilot", "codex", "claude")]
