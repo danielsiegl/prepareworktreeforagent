@@ -49,6 +49,36 @@ function Read-CliChoice {
     }
 }
 
+function Ensure-AgentsTemplate {
+    param([Parameter(Mandatory = $true)][string]$WorktreePath)
+
+    $agentsPath = Join-Path -Path $WorktreePath -ChildPath "agents.md"
+    if (Test-Path -LiteralPath $agentsPath) {
+        return
+    }
+
+    Write-Warning "agents.md was not found in '$WorktreePath'."
+
+    while ($true) {
+        $response = Read-Host "Create an empty template agents.md now? (y/n)"
+        switch ($response.Trim().ToLowerInvariant()) {
+            "y" {
+                New-Item -Path $agentsPath -ItemType File -Force | Out-Null
+                Write-Host "Created '$agentsPath'."
+                return
+            }
+            "yes" {
+                New-Item -Path $agentsPath -ItemType File -Force | Out-Null
+                Write-Host "Created '$agentsPath'."
+                return
+            }
+            "n" { return }
+            "no" { return }
+            default { Write-Host "Please answer y or n." -ForegroundColor Yellow }
+        }
+    }
+}
+
 if ([string]::IsNullOrWhiteSpace($repopath)) {
     $repopath = (Get-Location).Path
 }
@@ -181,6 +211,7 @@ Write-Host "Done."
 Write-Host "Repository : $repoRoot"
 Write-Host "Branch     : $newBranch"
 Write-Host "Worktree   : $worktreeToUse"
+Ensure-AgentsTemplate -WorktreePath $worktreeToUse
 
 $cliCommand = switch ($Cli) {
     "codex" { "codex" }

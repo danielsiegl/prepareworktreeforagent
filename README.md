@@ -21,7 +21,8 @@ If `-Cli` is omitted, the script will prompt you interactively.
 1. Detects the current git repository root and active branch.
 2. Creates a new branch named `<current-branch>-<cli>` (e.g. `my-feature-copilot`).
 3. Adds a git worktree for that branch in a sibling directory named `<repo>-<cli>` (e.g. `../myrepo-copilot`).
-4. Launches the selected CLI agent (`copilot`, `codex`, or `claude`) inside the new worktree directory.
+4. Checks whether `agents.md` exists in the worktree and offers to create an empty template when missing.
+5. Launches the selected CLI agent (`copilot`, `codex`, or `claude`) inside the new worktree directory.
 
 ## Requirements
 
