@@ -47,6 +47,14 @@ If `-Cli` is omitted, the script will prompt you interactively.
 .\new-cli-worktree.ps1 -Cli codex -CodexInContainer -CodexContainerImage my-codex-image
 ```
 
+## Docker image for Codex
+
+This repository includes a `Dockerfile` for the `my-codex-image` example used above.
+
+```bash
+docker build -t my-codex-image .
+```
+
 ## SmartGit Integration
 
 This is how to call the script from SmartGit:
