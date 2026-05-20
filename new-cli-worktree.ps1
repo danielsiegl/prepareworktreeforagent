@@ -13,6 +13,12 @@
 .PARAMETER Cli
     The CLI agent to launch. Valid values: copilot, codex, claude.
 
+.PARAMETER CodexInContainer
+    When set together with -Cli codex, runs Codex via Docker with the generated worktree bind-mounted to /workspace.
+
+.PARAMETER CodexContainerImage
+    Docker image used when -CodexInContainer is set. Defaults to 'my-codex-image'.
+
 .EXAMPLE
     .\new-cli-worktree.ps1 -repopath "C:\repos\myrepo" -Cli copilot
 
@@ -23,7 +29,9 @@
 param(
     [string]$repopath,
     [ValidateSet("copilot", "codex", "claude")]
-    [string]$Cli
+    [string]$Cli,
+    [switch]$CodexInContainer,
+    [string]$CodexContainerImage = "my-codex-image"
 )
 
 function Read-CliChoice {
@@ -58,6 +66,11 @@ Set-Location $repopath
 
 if (-not $Cli) {
     $Cli = Read-CliChoice
+}
+
+if ($CodexInContainer -and $Cli -ne "codex") {
+    Write-Error "-CodexInContainer can only be used with -Cli codex."
+    exit 1
 }
 
 
@@ -198,7 +211,50 @@ if (-not $cliExecutable) {
 Write-Host "Starting '$cliCommand' in '$worktreeToUse'..."
 Push-Location -LiteralPath $worktreeToUse
 try {
-    & $cliCommand
+    if ($Cli -eq "codex" -and $CodexInContainer) {
+        $dockerExecutable = Get-Command -Name docker -ErrorAction SilentlyContinue
+        if (-not $dockerExecutable) {
+            Write-Error "Docker command 'docker' was not found on PATH."
+            exit 1
+        }
+
+        $resolvedWorktree = (Resolve-Path -LiteralPath $worktreeToUse).Path
+        $dockerArgs = @(
+            "run", "--rm", "-it"
+        )
+
+        $idExecutable = Get-Command -Name id -ErrorAction SilentlyContinue
+        if ($idExecutable) {
+            $uid = (& id -u 2>$null)
+            $gid = (& id -g 2>$null)
+            if ($LASTEXITCODE -eq 0 -and $uid -match '^\d+$' -and $gid -match '^\d+$') {
+                $dockerArgs += @("--user", "$uid`:$gid")
+            }
+            else {
+                Write-Warning "Unable to resolve numeric uid/gid via 'id'; running container without --user override."
+            }
+        }
+        else {
+            Write-Warning "Command 'id' was not found; running container without --user override."
+        }
+
+        $dockerArgs += @(
+            "--workdir", "/workspace",
+            "--mount", "type=bind,src=$resolvedWorktree,dst=/workspace",
+            "--mount", "type=volume,src=codex-home,dst=/home/codex",
+            "-e", "HOME=/home/codex"
+        )
+
+        if ($env:OPENAI_API_KEY) {
+            $dockerArgs += @("-e", "OPENAI_API_KEY")
+        }
+
+        $dockerArgs += @($CodexContainerImage, "codex")
+        & docker @dockerArgs
+    }
+    else {
+        & $cliCommand
+    }
 }
 finally {
     Pop-Location

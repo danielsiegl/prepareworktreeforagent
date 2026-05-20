@@ -5,7 +5,7 @@ A PowerShell script that prepares a Git worktree for an AI coding agent (GitHub 
 ## Usage
 
 ```powershell
-.\new-cli-worktree.ps1 [-repopath <path>] [-Cli <copilot|codex|claude>]
+.\new-cli-worktree.ps1 [-repopath <path>] [-Cli <copilot|codex|claude>] [-CodexInContainer] [-CodexContainerImage <image>]
 ```
 
 If `-repopath` is omitted or empty, the script uses the current working directory.
@@ -15,6 +15,8 @@ If `-Cli` is omitted, the script will prompt you interactively.
 
 - `-repopath <path>`: Path to the git repository to use.
 - `-Cli <copilot|codex|claude>`: CLI agent to start.
+- `-CodexInContainer`: (Codex only) Runs Codex via Docker with the created worktree mounted to `/workspace`.
+- `-CodexContainerImage <image>`: Docker image to use with `-CodexInContainer` (default: `my-codex-image`).
 
 ## What it does
 
@@ -22,6 +24,7 @@ If `-Cli` is omitted, the script will prompt you interactively.
 2. Creates a new branch named `<current-branch>-<cli>` (e.g. `my-feature-copilot`).
 3. Adds a git worktree for that branch in a sibling directory named `<repo>-<cli>` (e.g. `../myrepo-copilot`).
 4. Launches the selected CLI agent (`copilot`, `codex`, or `claude`) inside the new worktree directory.
+   - Optionally, `codex` can be launched inside a Docker container with the worktree bind-mounted.
 
 ## Requirements
 
@@ -37,6 +40,11 @@ If `-Cli` is omitted, the script will prompt you interactively.
 # From inside your feature branch
 .\new-cli-worktree.ps1 -Cli copilot
 # Creates branch 'my-feature-copilot' and opens Copilot in ../myrepo-copilot
+```
+
+```powershell
+# Run Codex in Docker using the generated worktree bind mount
+.\new-cli-worktree.ps1 -Cli codex -CodexInContainer -CodexContainerImage my-codex-image
 ```
 
 ## SmartGit Integration
