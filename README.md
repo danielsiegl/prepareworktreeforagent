@@ -48,13 +48,6 @@ Open Edit, Preferences, Tools and Create a new entry or copy the "Open in Powers
 SmartGit help page for this section: [Preferences -> Tools](https://docs.syntevo.com/SmartGit/Latest/Manual/GUI/Preferences/Tools.html).
 
 ```cmd
-cmd.exe
-/c start pwsh.exe C:\repos\your-user\prepareworktreeforagent\new-cli-worktree.ps1 -repopath "${filePath}"
-```
-
-Note: if you need PowerShell to stay open reliably, place `-NoExit` before the script path:
-
-```cmd
 cmd.exe 
-/c start pwsh.exe -NoExit C:\repos\your-user\prepareworktreeforagent\new-cli-worktree.ps1 -repopath "${filePath}"
+/c start pwsh.exe -NoExit "C:\repos\your-user\prepareworktreeforagent\new-cli-worktree.ps1" -repopath "${filePath}"
 ```
