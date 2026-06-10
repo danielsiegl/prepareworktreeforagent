@@ -26,6 +26,22 @@ param(
     [string]$Cli
 )
 
+function Show-Rabbit {
+    Write-Host @"
+ (\_/)
+ ('.')
+ (")(")
+"@
+}
+
+function Show-Cat {
+    Write-Host @"
+  /\_/\
+ ( o.o )
+  > ^ <
+"@
+}
+
 function Read-CliChoice {
     $options = @("copilot", "codex", "claude")
     Write-Host ""
@@ -53,6 +69,8 @@ if ([string]::IsNullOrWhiteSpace($repopath)) {
     $repopath = (Get-Location).Path
 }
 
+Show-Rabbit
+Show-Cat
 Write-Output "Using git repo $repopath"
 Set-Location $repopath
 
