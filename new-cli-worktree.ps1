@@ -101,7 +101,7 @@ if ($currentBranch -eq "HEAD") {
 $newBranch = "$currentBranch-$Cli"
 $parentDir = Split-Path -Path $repoRoot -Parent
 $repoName = Split-Path -Path $repoRoot -Leaf
-$worktreeDir = Join-Path -Path $parentDir -ChildPath "$repoName-$Cli"
+$worktreeDir = Join-Path -Path $parentDir -ChildPath "$repoName-$newBranch"
 
 function Normalize-PathForComparison {
     param([Parameter(Mandatory = $true)][string]$Path)
