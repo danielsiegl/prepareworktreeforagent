@@ -16,6 +16,14 @@ show_cat() {
     printf '  /\\_/\\\n ( o.o )\n  > ^ <\n'
 }
 
+show_random_mascot() {
+    if (( RANDOM % 2 )); then
+        show_cat
+    else
+        show_rabbit
+    fi
+}
+
 read_cli_choice() {
     echo ""
     printf '\033[0;36mSelect CLI agent:\033[0m\n'
@@ -71,8 +79,7 @@ if [ -z "$repopath" ]; then
     repopath="$(pwd)"
 fi
 
-show_rabbit
-show_cat
+show_random_mascot
 echo "Using git repo $repopath"
 cd "$repopath"
 

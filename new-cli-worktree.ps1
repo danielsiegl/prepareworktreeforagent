@@ -42,6 +42,15 @@ function Show-Cat {
 "@
 }
 
+function Show-RandomMascot {
+    if ((Get-Random -Minimum 0 -Maximum 2) -eq 0) {
+        Show-Cat
+    }
+    else {
+        Show-Rabbit
+    }
+}
+
 function Read-CliChoice {
     $options = @("copilot", "codex", "claude")
     Write-Host ""
@@ -69,8 +78,7 @@ if ([string]::IsNullOrWhiteSpace($repopath)) {
     $repopath = (Get-Location).Path
 }
 
-Show-Rabbit
-Show-Cat
+Show-RandomMascot
 Write-Output "Using git repo $repopath"
 Set-Location $repopath
 
