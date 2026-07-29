@@ -73,7 +73,7 @@ If `-c` is omitted, the script prompts interactively.
 
 This is how to call the PowerShell script from SmartGit:
 
-Open Edit, Preferences, Tools and create a new entry or copy the "Open in Powershell" entry and start from there.
+Open Edit, Preferences, Tools and create a new entry or copy the "Open in Powershell" entry and start from there. (you need to adapt the path to the script)
 
 SmartGit help page for this section: [Preferences -> Tools](https://docs.syntevo.com/SmartGit/Latest/Manual/GUI/Preferences/Tools.html).
 
