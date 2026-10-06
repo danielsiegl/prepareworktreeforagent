@@ -2,12 +2,13 @@
 
 Scripts that prepare a Git worktree for an AI coding agent (GitHub Copilot, OpenAI Codex, Anthropic Claude, or Mistral Vibe). They create a new branch on top of your current feature branch and check it out as a separate worktree, then launch the chosen CLI agent inside that directory.
 
-Two versions are available:
+Three versions are available:
 
 | Script | Platform |
 |---|---|
 | `new-cli-worktree.ps1` | Windows (PowerShell) |
 | `new-cli-worktree.sh` | Linux / macOS / WSL (Bash) |
+| `new-cli-worktree-sbx.ps1` | Windows (PowerShell) — runs the agent inside a [Docker Sandbox](https://docs.docker.com/ai/sandboxes/) instead of directly on the host |
 
 ## Usage
 
@@ -41,6 +42,40 @@ CLIs that are not installed are marked as unavailable and cannot be selected.
 - `-p <path>`: Path to the git repository to use.
 - `-c <copilot|codex|claude|vibe>`: CLI agent to start.
 
+### PowerShell with Docker Sandboxes (`new-cli-worktree-sbx.ps1`)
+
+```powershell
+.\new-cli-worktree-sbx.ps1 [-repopath <path>] [-Cli <copilot|codex|claude>]
+```
+
+Same parameters as `new-cli-worktree.ps1`, but instead of launching the CLI
+agent directly on the host, it starts it inside a [Docker Sandbox](https://docs.docker.com/ai/sandboxes/)
+(`sbx`) using **clone mode**. This keeps the agent's actual working copy on
+the sandbox's own (Linux) filesystem instead of a Windows (NTFS) path, which
+avoids slow file I/O when the agent is doing lots of git operations, builds,
+or package installs. The host worktree is mounted read-only inside the
+sandbox as a reference/clone source.
+
+If the `sbx` CLI isn't installed, the script installs it automatically via:
+
+```powershell
+winget install -h Docker.sbx
+```
+
+You still need to run `sbx login` yourself at least once (interactive
+browser login; not automated by this script).
+
+Because clone mode keeps the agent's changes inside the sandbox, fetch them
+back to your host once the agent is done:
+
+```powershell
+git fetch sandbox-<branch>
+git log sandbox-<branch>/<branch>
+```
+
+or ask the agent to push the branch to `origin` directly from inside the
+sandbox.
+
 ## What it does
 
 1. Detects the current git repository root and active branch.
@@ -52,6 +87,8 @@ CLIs that are not installed are marked as unavailable and cannot be selected.
 ## Requirements
 
 - Git must be installed and available on `PATH`.
+- For `new-cli-worktree-sbx.ps1`: the [Docker Sandboxes `sbx` CLI](https://docs.docker.com/ai/sandboxes/install/)
+  (auto-installed via `winget` if missing) and a one-time `sbx login`.
 - At least one of the supported CLI tools must be installed:
   - [GitHub Copilot CLI](https://githubnext.com/projects/copilot-cli) (`copilot`)
   - [OpenAI Codex CLI](https://github.com/openai/codex) (`codex`)
@@ -70,6 +107,13 @@ CLIs that are not installed are marked as unavailable and cannot be selected.
 # Bash — from inside your feature branch
 ./new-cli-worktree.sh -c copilot
 # Creates branch 'my-feature-copilot' and opens Copilot in ../myrepo-my-feature-copilot
+```
+
+```powershell
+# PowerShell + Docker Sandboxes — from inside your feature branch
+.\new-cli-worktree-sbx.ps1 -Cli copilot
+# Creates branch 'my-feature-copilot', worktree '../myrepo-my-feature-copilot',
+# and runs Copilot inside a Docker Sandbox (clone mode) named 'my-feature-copilot'
 ```
 
 ## SmartGit Integration
