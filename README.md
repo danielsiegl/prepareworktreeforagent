@@ -1,6 +1,11 @@
 # prepareworktreeforagent
 
-Scripts that prepare a Git worktree for an AI coding agent (GitHub Copilot, OpenAI Codex, Anthropic Claude, or Mistral Vibe). They create a new branch on top of your current feature branch and check it out as a separate worktree, then launch the chosen CLI agent inside that directory.
+Scripts that prepare an isolated environment for an AI coding agent (GitHub
+Copilot, OpenAI Codex, Anthropic Claude, or Mistral Vibe). The `worktree`
+scripts create a new branch on top of your current feature branch and check
+it out as a separate git worktree, then launch the chosen CLI agent inside
+that directory. `new-cli-sbx.ps1` instead launches the agent inside an
+isolated Docker Sandbox and creates no git worktree at all — see below.
 
 Three versions are available:
 
@@ -45,7 +50,7 @@ CLIs that are not installed are marked as unavailable and cannot be selected.
 ### PowerShell with Docker Sandboxes (`new-cli-sbx.ps1`)
 
 ```powershell
-.\new-cli-sbx.ps1 [-repopath <path>] [-Cli <copilot|codex|claude>]
+.\new-cli-sbx.ps1 [-repopath <path>] [-Cli <copilot|codex|claude|vibe>]
 ```
 
 Instead of creating a git worktree on the host and launching the CLI agent
@@ -57,6 +62,11 @@ repeatedly reads/writes a Windows (NTFS) path through a filesystem
 passthrough. Because the clone itself provides isolation (the agent creates
 its own branch inside it), **no host git worktree is created** for this
 script.
+
+`vibe` is passed straight through like the other agents, but unlike
+`copilot`/`codex`/`claude`, `sbx` has no officially documented built-in
+template for it — `sbx run` may fail to resolve it unless you've set up a
+custom kit yourself.
 
 `sbx run --clone` requires the *main* repository working directory — it
 refuses to run from a linked git worktree (e.g. one created by
@@ -84,18 +94,26 @@ the script asks you to restart your shell and re-run it.
 You still need to run `sbx login` yourself at least once (interactive
 browser login; not automated by this script).
 
-Because clone mode keeps the agent's changes inside the sandbox, fetch them
-back to your host once the agent is done:
+> [!IMPORTANT]
+> The agent **cannot** fetch or pull its own changes back to your host. Your
+> host repo is mounted **read-only** inside the sandbox (at
+> `/run/sandbox/source`), so running `git fetch`/`git pull` from inside the
+> agent session fails with something like
+> `error: cannot open '.git/FETCH_HEAD': Read-only file system`. Don't ask
+> the agent to run these — the script handles it for you instead: once the
+> sandbox session ends, it automatically runs `git fetch sandbox-<name>` on
+> the host and lists the branches it fetched, e.g.:
+>
+> ```powershell
+> git checkout -b <branch-name> sandbox-<name>/<branch-name>
+> ```
+>
+> Then push to `origin` on the host with your own credentials — or give the
+> agent push access so it can push the branch to `origin` directly from
+> inside the sandbox (that goes out over the network, not through the
+> read-only host mount, so it works).
 
-```powershell
-git fetch sandbox-<name>
-git log sandbox-<name>/<branch-name>
-```
-
-or ask the agent to push the branch to `origin` directly from inside the
-sandbox.
-
-## What it does
+## What `new-cli-worktree.ps1` / `new-cli-worktree.sh` do
 
 1. Detects the current git repository root and active branch.
 2. Creates a new branch named `<current-branch>-<cli>` (e.g. `my-feature-copilot`).
