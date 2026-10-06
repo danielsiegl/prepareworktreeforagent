@@ -1,0 +1,3 @@
+*.sh text eol=lf
+rider-sbx/** text eol=lf
+vscode-sbx/** text eol=lf

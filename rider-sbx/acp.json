@@ -1,0 +1,9 @@
+{
+  "agent_servers": {
+    "Mistral Vibe": {
+      "command": "/home/agent/.local/bin/vibe-acp",
+      "args": [],
+      "env": {}
+    }
+  }
+}

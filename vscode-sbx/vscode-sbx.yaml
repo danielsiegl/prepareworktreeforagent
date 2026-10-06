@@ -1,0 +1,54 @@
+# syntax=docker/sandbox-kit:3
+schemaVersion: "3"
+kind: workload
+displayName: VS Code (Remote-SSH) + Mistral Vibe
+description: VS Code server reached over SSH from the host editor, with the Mistral Vibe extension running inside the sandbox
+
+args:
+  # Content hash of the kit folder, passed by the launchers: sbx's own change detection
+  # can reuse a stale image after script edits, a new value forces the rebuild.
+  kitRevision:
+    default: "dev"
+    pattern: '^[A-Za-z0-9]+$'
+    buildArg: KIT_REVISION
+  dotnetChannel:
+    default: "9.0"
+    pattern: '^[0-9]+\.[0-9]+$'
+    buildArg: DOTNET_CHANNEL
+
+provides: ["vscode-sbx@1"]
+
+capabilities:
+  - type: com.docker.sandbox/sbx@1
+  - type: com.docker.sandbox/network-policy@1
+    config:
+      runtime:
+        # Hosts this kit needs on top of sbx's global allow policy. The git forges are
+        # denied by new-vscode-sbx.ps1/.sh so work only leaves via 'git fetch sandbox-<name>'.
+        allow:
+          # VS Code server download + extension gallery
+          - update.code.visualstudio.com:443
+          - vscode.download.prss.microsoft.com:443
+          - "*.vscode-cdn.net:443"
+          - marketplace.visualstudio.com:443
+          - "*.gallery.vsassets.io:443"
+          - "*.gallerycdn.vsassets.io:443"
+          # Mistral (API + Vibe sign-in)
+          - api.mistral.ai:443   # must be explicit: it is the credential inject domain
+          - mistral.ai:443
+          - "*.mistral.ai:443"
+          # NuGet
+          - api.nuget.org:443
+          - globalcdn.nuget.org:443
+  - type: com.docker.sandbox/credential@1
+    description: Mistral API access for Vibe
+    config:
+      service: mistral
+      phase: runtime
+      apiKey:
+        name: MISTRAL_API_KEY
+        proxyManaged: true
+        inject:
+          - domain: api.mistral.ai
+            header: Authorization
+            format: "Bearer %s"

@@ -1,0 +1,55 @@
+# syntax=docker/sandbox-kit:3
+schemaVersion: "3"
+kind: workload
+displayName: Rider (remote dev) + Mistral Vibe
+description: JetBrains Rider remote-dev backend exposing only the IDE UI, with Mistral Vibe as ACP agent
+
+args:
+  # Content hash of the kit folder, passed by the launchers: sbx's own change detection
+  # can reuse a stale image after script edits, a new value forces the rebuild.
+  kitRevision:
+    default: "dev"
+    pattern: '^[A-Za-z0-9]+$'
+    buildArg: KIT_REVISION
+  riderVersion:
+    default: "2026.2.3.1"
+    pattern: '^[0-9]{4}\.[0-9]+(\.[0-9]+)*$'
+    buildArg: RIDER_VERSION
+  dotnetChannel:
+    default: "9.0"
+    pattern: '^[0-9]+\.[0-9]+$'
+    buildArg: DOTNET_CHANNEL
+
+provides: ["rider@${{ kit.args.riderVersion }}"]
+
+capabilities:
+  - type: com.docker.sandbox/sbx@1
+  - type: com.docker.sandbox/network-policy@1
+    config:
+      runtime:
+        # Hosts this kit needs. This list adds to sbx's global allow policy, which already
+        # contains the git forges; new-rider-sbx.ps1/.sh therefore pass --deny-network for
+        # github/gitlab/bitbucket/azure devops so work only leaves via 'git fetch sandbox-<name>'.
+        allow:
+          - account.jetbrains.com:443
+          - www.jetbrains.com:443
+          - plugins.jetbrains.com:443
+          - download.jetbrains.com:443
+          - download-cdn.jetbrains.com:443
+          - resources.jetbrains.com:443
+          - cache-redirector.jetbrains.com:443
+          - api.nuget.org:443
+          - globalcdn.nuget.org:443
+          - api.mistral.ai:443
+  - type: com.docker.sandbox/credential@1
+    description: Mistral API access for Vibe
+    config:
+      service: mistral
+      phase: runtime
+      apiKey:
+        name: MISTRAL_API_KEY
+        proxyManaged: true
+        inject:
+          - domain: api.mistral.ai
+            header: Authorization
+            format: "Bearer %s"

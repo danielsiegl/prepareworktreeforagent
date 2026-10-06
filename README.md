@@ -1,15 +1,8 @@
 # prepareworktreeforagent
 
-![Maintained](https://img.shields.io/badge/maintained-yes-brightgreen.svg)
+Scripts that prepare a Git worktree for an AI coding agent (GitHub Copilot, OpenAI Codex, Anthropic Claude, or Mistral Vibe). They create a new branch on top of your current feature branch and check it out as a separate worktree, then launch the chosen CLI agent inside that directory.
 
-Scripts that prepare an isolated environment for an AI coding agent (GitHub
-Copilot, OpenAI Codex, Anthropic Claude, or Mistral Vibe). The `worktree`
-scripts create a new branch on top of your current feature branch and check
-it out as a separate git worktree, then launch the chosen CLI agent inside
-that directory. `start-sbx.ps1` instead launches the agent inside an
-isolated Docker Sandbox and creates no git worktree at all — see below.
-
-The following scripts are available:
+Two versions are available:
 
 | Script | Platform |
 |---|---|
@@ -247,24 +240,111 @@ host worktree step — see above.
 # Creates branch 'my-feature-copilot' and opens Copilot in ../myrepo-my-feature-copilot
 ```
 
-```powershell
-# PowerShell + Docker Sandboxes — from inside your repo
-.\start-sbx.ps1 -Cli copilot
-# Starts Copilot inside a Docker Sandbox (clone mode) named '<repo>-copilot';
-# ask the agent to create its own branch, e.g. 'my-feature-copilot'
-```
+## VS Code in a Docker sandbox
+
+`new-vscode-sbx.ps1` / `new-vscode-sbx.sh` run the agent inside a [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) (`sbx`) microVM in **clone mode**. Only the **VS Code window** runs on your machine.
+
+- The VS Code server, its extension host, the **Mistral Vibe** extension (`mistralai.mistral-vibe-code`) and every terminal run in the sandbox. The window connects to them with [Remote - SSH](https://code.visualstudio.com/docs/remote/ssh) on a port bound to `127.0.0.1`.
+- The sandbox works on a private clone that is reduced to the **current branch**. Your host working tree is never written.
+- Push URLs are disabled, and GitHub, GitLab, Bitbucket and Azure DevOps are blocked. Work leaves the sandbox only when **you fetch it**.
 
 ```powershell
-# PowerShell + Docker Sandboxes — Mistral Vibe shortcut
-.\start-vibe-sbx.ps1
-# Same as '.\start-sbx.ps1 -Cli vibe', no CLI-agent prompt
+.\new-vscode-sbx.ps1 [-repopath <path>] [-Memory 8g] [-Port 2222]
 ```
 
-```powershell
-# One-time setup: build a local sbx image/kit for Mistral Vibe
-.\build-vibe-sbx-kit.ps1
-# Writes sbx-kits\mistral-vibe\{Dockerfile,spec.yaml} and builds the image locally
+```bash
+./new-vscode-sbx.sh [-p <path>] [-m 8g] [-P 2222]
 ```
+
+### Workflow
+
+1. Store your Mistral key once: `sbx secret set mistral`. The sbx proxy injects it, so it never enters the sandbox.
+2. Run the script from your feature branch. It does the following:
+   - creates the sandbox `vscode-<repo>-<branch>`; the first run builds the kit from `vscode-sbx/`, which takes a few minutes,
+   - starts an SSH server inside the sandbox,
+   - writes an SSH host entry with the same name under `~/.ssh/vscode-sbx/`,
+   - installs Remote - SSH if missing,
+   - opens VS Code on the sandbox.
+3. Choose **Linux** if VS Code asks for the remote platform. The Mistral Vibe extension is installed into the sandbox automatically on the first connect. Run *Developer: Reload Window* if it doesn't show up straight away.
+4. Let Vibe work and commit inside the sandbox.
+5. Fetch the result on the host:
+   ```bash
+   git fetch sandbox-vscode-<repo>-<branch>
+   git log <branch>..sandbox-vscode-<repo>-<branch>/<branch>
+   git merge sandbox-vscode-<repo>-<branch>/<branch>   # or cherry-pick
+   ```
+6. Pause with `sbx stop <name>` and re-run the script to continue. Run `sbx rm <name>` **only after fetching**, because it deletes the in-sandbox clone.
+
+### What the script changes on your machine
+
+- `~/.ssh/vscode-sbx/`: a dedicated key pair (`id_ed25519`), one `<sandbox>.conf` host entry per sandbox, and per-sandbox `known_hosts_*` files.
+- `~/.ssh/config`: the line `Include vscode-sbx/*.conf` is added once at the top. Nothing else in the file is touched.
+
+### Kit (`vscode-sbx/`)
+
+| File | Purpose |
+|---|---|
+| `vscode-sbx.dockerfile` | Ubuntu 24.04 + OpenSSH server + .NET SDK + Mistral Vibe CLI, user `agent` (UID 1000) |
+| `vscode-sbx.yaml` | sbx descriptor: network allowlist (VS Code server/marketplace, Mistral, NuGet) and Mistral credential injection |
+| `vscode-sbx-start.sh` | Trims the clone to the current branch, starts an unprivileged `sshd` (key-only, port 2222) with the sbx proxy environment, and installs Mistral Vibe into the VS Code server once Remote - SSH has deployed it |
+
+The limitations listed for the Rider variant below apply here too: the read-only host mount at `/run/sandbox/source`, and the fact that the network allowlist adds to sbx's global policy. The VS Code launcher doesn't block `*.visualstudio.com`, because `marketplace.visualstudio.com` serves the extensions.
+
+## Rider in a Docker sandbox
+
+`new-rider-sbx.ps1` / `new-rider-sbx.sh` give stronger isolation than a worktree. They start JetBrains Rider inside a [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) (`sbx`) microVM in **clone mode**.
+
+- The sandbox gets a private Git clone of the **current branch**. Your host working tree is never written.
+- Rider runs there as a **remote-dev backend**. The only thing published is its UI port on `127.0.0.1`, and you work through JetBrains Gateway / Client.
+- **Mistral Vibe** is registered as an ACP agent (`vibe-acp`) in Rider's AI chat, so all agentic work happens inside the sandbox.
+- Push URLs inside the clone are disabled and git forges are blocked. Work leaves the sandbox only when **you fetch it**.
+
+```powershell
+.\new-rider-sbx.ps1 [-repopath <path>] [-Memory 8g] [-Port 5990]
+```
+
+```bash
+./new-rider-sbx.sh [-p <path>] [-m 8g] [-P 5990]
+```
+
+### Workflow
+
+1. Store your Mistral key once: `sbx secret set mistral`. The proxy injects it, so it never enters the sandbox.
+2. Run the script from your feature branch. The first run builds the kit from `rider-sbx/`, which takes a few minutes.
+3. Paste the `Join link: tcp://127.0.0.1:<Port>#…` from the output into JetBrains Gateway (*Connect to running IDE*).
+4. Let Vibe work in Rider and commit inside the sandbox.
+5. Fetch the result on the host:
+   ```bash
+   git fetch sandbox-rider-<repo>-<branch>
+   git log <branch>..sandbox-rider-<repo>-<branch>/<branch>
+   git merge sandbox-rider-<repo>-<branch>/<branch>   # or cherry-pick
+   ```
+6. Detach with `Ctrl-\` to leave the IDE running, and re-run the script to re-attach. Run `sbx rm <name>` **only after fetching**, because it deletes the in-sandbox clone.
+
+### Requirements
+
+- [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) (`sbx`).
+- JetBrains Gateway or Toolbox with a Rider license. The license is checked on the client side.
+- A Mistral API key.
+- The script must run from the repository's main checkout, because sbx clone mode does not support linked worktrees.
+
+### Kit (`rider-sbx/`)
+
+| File | Purpose |
+|---|---|
+| `rider-sbx.dockerfile` | Ubuntu 24.04 + .NET SDK + Rider + Mistral Vibe, user `agent` (UID 1000) |
+| `rider-sbx.yaml` | sbx descriptor: build args (`riderVersion`, `dotnetChannel`), network allowlist (JetBrains, NuGet, Mistral only), Mistral credential injection |
+| `entrypoint.sh` | Disables push URLs, sets the git identity, starts `remote-dev-server.sh` on port 5990 |
+| `acp.json` | Registers `vibe-acp` as an agent in Rider's AI chat |
+
+You can override the kit args, for example `sbx run … --kit-arg riderVersion=2026.1 ./rider-sbx .`.
+
+### Known limitations
+
+- sbx makes a *full* clone, including all branches, tags and the host's remotes, and it borrows objects from the host repo through git alternates. On every start, `entrypoint.sh` reduces the clone to the checked-out branch, copies in the objects that branch needs and removes the alternates link. After that, other branches are not reachable from the agent's working repository.
+- sbx still mounts the host repository **read-only** at `/run/sandbox/source`, including `.git`, and not even root inside the VM can unmount it. A process that deliberately reads that path can see other branches, but it can't modify them. Rider and Vibe work only in the trimmed clone.
+- The kit's network allowlist **adds to** sbx's global allow policy; it doesn't replace it. That global policy already permits github.com and the other common forges. The launchers block GitHub, GitLab, Bitbucket and Azure DevOps (including subdomains) with `--deny-network`. If you run `sbx run ./rider-sbx` by hand, add those flags yourself. Other hosts on the global list stay reachable; tighten them with `sbx policy`.
+- Rider needs plenty of RAM. Raise `-Memory` for large solutions.
 
 ## SmartGit Integration
 
