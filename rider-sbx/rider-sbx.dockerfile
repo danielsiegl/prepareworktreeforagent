@@ -41,8 +41,6 @@ RUN curl -fsSL "https://download.jetbrains.com/rider/JetBrains.Rider-${RIDER_VER
     && rm /tmp/rider.tar.gz \
     && chown -R agent:agent /opt/rider
 
-ARG KIT_REVISION=dev
-LABEL com.danielsiegl.kit-revision="${KIT_REVISION}"
 COPY entrypoint.sh /usr/local/bin/rider-sbx-entrypoint
 RUN chmod 0755 /usr/local/bin/rider-sbx-entrypoint
 

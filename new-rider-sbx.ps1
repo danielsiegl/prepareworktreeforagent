@@ -103,12 +103,6 @@ if (& git -C $repoRoot status --porcelain) {
 $repoName = Split-Path -Path $repoRoot -Leaf
 $sandboxName = ("rider-$repoName-$currentBranch".ToLowerInvariant() -replace '[^a-z0-9-]', '-') -replace '-+', '-'
 $kitPath = Join-Path -Path $PSScriptRoot -ChildPath "rider-sbx"
-
-# Content hash of the kit: sbx can reuse a stale kit image after script edits; a new kitRevision forces the rebuild.
-$kitFileHashes = (Get-ChildItem -LiteralPath $kitPath -File | Sort-Object Name |
-    ForEach-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }) -join ""
-$kitRevision = (Get-FileHash -Algorithm SHA256 -InputStream ([System.IO.MemoryStream]::new([System.Text.Encoding]::ASCII.GetBytes($kitFileHashes)))).Hash.Substring(0, 12).ToLowerInvariant()
-
 Write-Host "Repository : $repoRoot"
 Write-Host "Branch     : $currentBranch"
 Write-Host "Sandbox    : $sandboxName"
@@ -136,6 +130,11 @@ if ($existing) {
     & sbx run --name $sandboxName --env "RIDER_SBX_HOST_PORT=$Port"
 }
 else {
+    if (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue) {
+        Write-Error "Port $Port is already in use (another sandbox? check 'sbx ls'). Pick a free one with -Port."
+        exit 1
+    }
+
     # sbx's global policy allows the common forges; deny them so work only leaves via 'git fetch sandbox-<name>'.
     $forgeHosts = @(
         "github.com", "*.github.com", "githubusercontent.com", "*.githubusercontent.com",
@@ -149,7 +148,6 @@ else {
         --publish "127.0.0.1:${Port}:5990" `
         --memory $Memory `
         --env "RIDER_SBX_HOST_PORT=$Port" `
-        --kit-arg "kitRevision=$kitRevision" `
         @denyArgs `
         $kitPath $repoRoot
 }

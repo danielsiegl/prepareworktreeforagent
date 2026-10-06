@@ -34,8 +34,6 @@ RUN curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
     && ln -s /usr/share/dotnet/dotnet /usr/local/bin/dotnet \
     && rm /tmp/dotnet-install.sh
 
-ARG KIT_REVISION=dev
-LABEL com.danielsiegl.kit-revision="${KIT_REVISION}"
 COPY vscode-sbx-start.sh /usr/local/bin/vscode-sbx-start
 RUN chmod 0755 /usr/local/bin/vscode-sbx-start
 

@@ -111,12 +111,6 @@ if (& git -C $repoRoot status --porcelain) {
 $repoName = Split-Path -Path $repoRoot -Leaf
 $sandboxName = ("vscode-$repoName-$currentBranch".ToLowerInvariant() -replace '[^a-z0-9-]', '-') -replace '-+', '-'
 $kitPath = Join-Path -Path $PSScriptRoot -ChildPath "vscode-sbx"
-
-# Content hash of the kit: sbx can reuse a stale kit image after script edits; a new kitRevision forces the rebuild.
-$kitFileHashes = (Get-ChildItem -LiteralPath $kitPath -File | Sort-Object Name |
-    ForEach-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }) -join ""
-$kitRevision = (Get-FileHash -Algorithm SHA256 -InputStream ([System.IO.MemoryStream]::new([System.Text.Encoding]::ASCII.GetBytes($kitFileHashes)))).Hash.Substring(0, 12).ToLowerInvariant()
-
 Write-Host "Repository : $repoRoot"
 Write-Host "Branch     : $currentBranch"
 Write-Host "Sandbox    : $sandboxName"
@@ -149,6 +143,11 @@ $knownHostsPath = Join-Path -Path $sbxSshDir -ChildPath "known_hosts_$sandboxNam
 # ---------- create sandbox (first run) ----------
 $existing = & sbx ls 2>$null | Select-String -Pattern "(^|\s)$([regex]::Escape($sandboxName))(\s|$)" -Quiet
 if (-not $existing) {
+    if (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue) {
+        Write-Error "Port $Port is already in use (another sandbox? check 'sbx ls'). Pick a free one with -Port."
+        exit 1
+    }
+
     # sbx's global policy allows the common forges; deny them so work only leaves via 'git fetch sandbox-<name>'.
     # (No '*.visualstudio.com': marketplace.visualstudio.com serves the VS Code extensions.)
     $forgeHosts = @(
@@ -162,7 +161,6 @@ if (-not $existing) {
     & sbx run --detached --clone --name $sandboxName `
         --publish "127.0.0.1:${Port}:2222" `
         --memory $Memory `
-        --kit-arg "kitRevision=$kitRevision" `
         @denyArgs `
         $kitPath $repoRoot
     if ($LASTEXITCODE -ne 0) {
@@ -182,6 +180,14 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 $workspace = ($startOutput | Select-String -Pattern '^VSCODE_SBX_WORKSPACE=(.+)$' | Select-Object -First 1).Matches.Groups[1].Value.Trim()
+
+# sbx sometimes reuses a cached kit image after kit files changed; detect that instead of running stale code.
+$localStartHash = (Get-FileHash -LiteralPath (Join-Path -Path $kitPath -ChildPath "vscode-sbx-start.sh") -Algorithm SHA256).Hash.ToLowerInvariant()
+$sandboxStartHash = ("$(& sbx exec $sandboxName sha256sum /usr/local/bin/vscode-sbx-start 2>$null)" -split '\s+')[0]
+if ($sandboxStartHash -ne $localStartHash) {
+    Write-Warning "Sandbox '$sandboxName' runs an older vscode-sbx-start than '$kitPath' (sbx reused a cached kit image)."
+    Write-Warning "To rebuild: fetch any work first, then 'sbx rm $sandboxName', remove the 'sbx-kit-src vscode-sbx-*' images listed by 'sbx template ls' with 'sbx template rm', and re-run this script."
+}
 
 $hostConfigPath = Join-Path -Path $sbxSshDir -ChildPath "$sandboxName.conf"
 $hostConfig = @"

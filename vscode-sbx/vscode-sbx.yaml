@@ -5,12 +5,6 @@ displayName: VS Code (Remote-SSH) + Mistral Vibe
 description: VS Code server reached over SSH from the host editor, with the Mistral Vibe extension running inside the sandbox
 
 args:
-  # Content hash of the kit folder, passed by the launchers: sbx's own change detection
-  # can reuse a stale image after script edits, a new value forces the rebuild.
-  kitRevision:
-    default: "dev"
-    pattern: '^[A-Za-z0-9]+$'
-    buildArg: KIT_REVISION
   dotnetChannel:
     default: "9.0"
     pattern: '^[0-9]+\.[0-9]+$'

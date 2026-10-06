@@ -5,12 +5,6 @@ displayName: Rider (remote dev) + Mistral Vibe
 description: JetBrains Rider remote-dev backend exposing only the IDE UI, with Mistral Vibe as ACP agent
 
 args:
-  # Content hash of the kit folder, passed by the launchers: sbx's own change detection
-  # can reuse a stale image after script edits, a new value forces the rebuild.
-  kitRevision:
-    default: "dev"
-    pattern: '^[A-Za-z0-9]+$'
-    buildArg: KIT_REVISION
   riderVersion:
     default: "2026.2.3.1"
     pattern: '^[0-9]{4}\.[0-9]+(\.[0-9]+)*$'

@@ -242,7 +242,7 @@ host worktree step — see above.
 
 ## VS Code in a Docker sandbox
 
-`new-vscode-sbx.ps1` / `new-vscode-sbx.sh` run the agent inside a [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) (`sbx`) microVM in **clone mode**. Only the **VS Code window** runs on your machine.
+`new-vscode-sbx.ps1` (PowerShell 7 / `pwsh`) runs the agent inside a [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) (`sbx`) microVM in **clone mode**. Only the **VS Code window** runs on your machine.
 
 - The VS Code server, its extension host, the **Mistral Vibe** extension (`mistralai.mistral-vibe-code`) and every terminal run in the sandbox. The window connects to them with [Remote - SSH](https://code.visualstudio.com/docs/remote/ssh) on a port bound to `127.0.0.1`.
 - The sandbox works on a private clone that is reduced to the **current branch**. Your host working tree is never written.
@@ -252,28 +252,27 @@ host worktree step — see above.
 .\new-vscode-sbx.ps1 [-repopath <path>] [-Memory 8g] [-Port 2222]
 ```
 
-```bash
-./new-vscode-sbx.sh [-p <path>] [-m 8g] [-P 2222]
-```
-
 ### Workflow
 
 1. Store your Mistral key once: `sbx secret set mistral`. The sbx proxy injects it, so it never enters the sandbox.
-2. Run the script from your feature branch. It does the following:
+2. **Commit first.** The sandbox clones committed state only, and the script warns if the working tree has uncommitted changes.
+3. Run the script from your feature branch. It does the following:
    - creates the sandbox `vscode-<repo>-<branch>`; the first run builds the kit from `vscode-sbx/`, which takes a few minutes,
    - starts an SSH server inside the sandbox,
    - writes an SSH host entry with the same name under `~/.ssh/vscode-sbx/`,
    - installs Remote - SSH if missing,
    - opens VS Code on the sandbox.
-3. Choose **Linux** if VS Code asks for the remote platform. The Mistral Vibe extension is installed into the sandbox automatically on the first connect. Run *Developer: Reload Window* if it doesn't show up straight away.
-4. Let Vibe work and commit inside the sandbox.
-5. Fetch the result on the host:
+4. Choose **Linux** if VS Code asks for the remote platform. The Mistral Vibe extension is installed into the sandbox automatically on the first connect. Run *Developer: Reload Window* if it doesn't show up straight away.
+5. Let Vibe work and commit inside the sandbox.
+6. Fetch the result on the host:
    ```bash
    git fetch sandbox-vscode-<repo>-<branch>
    git log <branch>..sandbox-vscode-<repo>-<branch>/<branch>
    git merge sandbox-vscode-<repo>-<branch>/<branch>   # or cherry-pick
    ```
-6. Pause with `sbx stop <name>` and re-run the script to continue. Run `sbx rm <name>` **only after fetching**, because it deletes the in-sandbox clone.
+7. Pause with `sbx stop <name>` and re-run the script to continue. Run `sbx rm <name>` **only after fetching**, because it deletes the in-sandbox clone.
+
+**Stale kit image:** sbx sometimes reuses a cached kit image after files in `vscode-sbx/` changed. The script detects this and prints a warning. To rebuild, first fetch any work. Then run `sbx rm <name>`, find the `sbx-kit-src vscode-sbx-*` images with `sbx template ls` and remove them with `sbx template rm`, and re-run the script.
 
 ### What the script changes on your machine
 
@@ -292,7 +291,7 @@ The limitations listed for the Rider variant below apply here too: the read-only
 
 ## Rider in a Docker sandbox
 
-`new-rider-sbx.ps1` / `new-rider-sbx.sh` give stronger isolation than a worktree. They start JetBrains Rider inside a [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) (`sbx`) microVM in **clone mode**.
+`new-rider-sbx.ps1` gives stronger isolation than a worktree. It starts JetBrains Rider inside a [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) (`sbx`) microVM in **clone mode**.
 
 - The sandbox gets a private Git clone of the **current branch**. Your host working tree is never written.
 - Rider runs there as a **remote-dev backend**. The only thing published is its UI port on `127.0.0.1`, and you work through JetBrains Gateway / Client.
@@ -301,10 +300,6 @@ The limitations listed for the Rider variant below apply here too: the read-only
 
 ```powershell
 .\new-rider-sbx.ps1 [-repopath <path>] [-Memory 8g] [-Port 5990]
-```
-
-```bash
-./new-rider-sbx.sh [-p <path>] [-m 8g] [-P 5990]
 ```
 
 ### Workflow
@@ -343,7 +338,7 @@ You can override the kit args, for example `sbx run … --kit-arg riderVersion=2
 
 - sbx makes a *full* clone, including all branches, tags and the host's remotes, and it borrows objects from the host repo through git alternates. On every start, `entrypoint.sh` reduces the clone to the checked-out branch, copies in the objects that branch needs and removes the alternates link. After that, other branches are not reachable from the agent's working repository.
 - sbx still mounts the host repository **read-only** at `/run/sandbox/source`, including `.git`, and not even root inside the VM can unmount it. A process that deliberately reads that path can see other branches, but it can't modify them. Rider and Vibe work only in the trimmed clone.
-- The kit's network allowlist **adds to** sbx's global allow policy; it doesn't replace it. That global policy already permits github.com and the other common forges. The launchers block GitHub, GitLab, Bitbucket and Azure DevOps (including subdomains) with `--deny-network`. If you run `sbx run ./rider-sbx` by hand, add those flags yourself. Other hosts on the global list stay reachable; tighten them with `sbx policy`.
+- The kit's network allowlist **adds to** sbx's global allow policy; it doesn't replace it. That global policy already permits github.com and the other common forges. The launcher blocks GitHub, GitLab, Bitbucket and Azure DevOps (including subdomains) with `--deny-network`. If you run `sbx run ./rider-sbx` by hand, add those flags yourself. Other hosts on the global list stay reachable; tighten them with `sbx policy`.
 - Rider needs plenty of RAM. Raise `-Memory` for large solutions.
 
 ## SmartGit Integration
