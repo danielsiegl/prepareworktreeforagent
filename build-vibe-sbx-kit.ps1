@@ -18,7 +18,14 @@
       2. Builds the image locally (single platform, no registry push) and
          tags it with -ImageTag.
 
-      3. Optionally runs 'sbx secret set mistral' so the sandbox proxy can
+      3. Loads the built image into sbx's own sandbox runtime image store via
+         'docker save' + 'sbx template load'. This step is required: sbx's
+         sandboxd keeps a private image store that is NOT the same as Docker
+         Desktop's regular image list, so a plain 'docker build' is otherwise
+         invisible to 'sbx run' (it fails with a 403 trying to pull the local
+         tag from a registry that doesn't have it).
+
+      4. Optionally runs 'sbx secret set mistral' so the sandbox proxy can
          inject your Mistral API key without it ever entering the VM.
 
     It does NOT run 'sbx kit validate' or 'sbx run' automatically -- it prints
@@ -33,28 +40,22 @@
     Defaults to "sbx-mistral-vibe:local". No registry/namespace is used or required
     since this is a local-only build.
 
-.PARAMETER Force
-    Overwrite an existing Dockerfile/spec.yaml under sbx-kits\mistral-vibe without
-    prompting. Without this switch, the script asks before overwriting files that
-    already exist (in case you've hand-customized them).
-
 .EXAMPLE
     .\build-vibe-sbx-kit.ps1
 
 .EXAMPLE
-    .\build-vibe-sbx-kit.ps1 -VibeVersion "2.25.0" -ImageTag "sbx-mistral-vibe:local" -Force
+    .\build-vibe-sbx-kit.ps1 -VibeVersion "2.25.0" -ImageTag "sbx-mistral-vibe:local"
 
 .NOTES
     Prerequisites: Docker Desktop/Engine running, 'sbx' installed and signed in, and a
     Mistral API key (https://console.mistral.ai/). After this script finishes, run:
 
         sbx kit validate .\sbx-kits\mistral-vibe
-        sbx run .\sbx-kits\mistral-vibe --name mistral-vibe .
+        sbx run .\sbx-kits\mistral-vibe --name mistral-vibe --pull never .
 #>
 param(
     [string]$VibeVersion = "2.24.5",
-    [string]$ImageTag = "sbx-mistral-vibe:local",
-    [switch]$Force
+    [string]$ImageTag = "sbx-mistral-vibe:local"
 )
 
 function Test-SbxInstalled {
@@ -68,20 +69,8 @@ function Test-DockerInstalled {
 function Write-KitFile {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][string]$Content,
-        [Parameter(Mandatory = $true)][bool]$ForceOverwrite
+        [Parameter(Mandatory = $true)][string]$Content
     )
-
-    if (Test-Path -LiteralPath $Path) {
-        if (-not $ForceOverwrite) {
-            Write-Host -NoNewline "'$Path' already exists. Overwrite? (y/N): "
-            $answer = Read-Host
-            if ($answer -notmatch '^(y|yes)$') {
-                Write-Host "Keeping existing '$Path'." -ForegroundColor Yellow
-                return
-            }
-        }
-    }
 
     Set-Content -LiteralPath $Path -Value $Content -NoNewline
     Write-Host "Wrote '$Path'." -ForegroundColor Green
@@ -151,8 +140,8 @@ credentials:
           scheme: bearer
 "@
 
-Write-KitFile -Path $dockerfilePath -Content $dockerfileContent -ForceOverwrite:$Force.IsPresent
-Write-KitFile -Path $specPath -Content $specContent -ForceOverwrite:$Force.IsPresent
+Write-KitFile -Path $dockerfilePath -Content $dockerfileContent
+Write-KitFile -Path $specPath -Content $specContent
 
 Write-Host ""
 Write-Host "Building local image '$ImageTag' (VIBE_VERSION=$VibeVersion)..." -ForegroundColor Cyan
@@ -167,6 +156,30 @@ if ($buildExitCode -ne 0) {
 Write-Host "Image '$ImageTag' built successfully." -ForegroundColor Green
 
 Write-Host ""
+Write-Host "Loading '$ImageTag' into sbx's sandbox runtime image store..." -ForegroundColor Cyan
+$tarPath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "sbx-mistral-vibe-$([guid]::NewGuid().ToString('N')).tar"
+try {
+    & docker save -o $tarPath $ImageTag
+    $saveExitCode = $LASTEXITCODE
+    if ($saveExitCode -ne 0) {
+        Write-Error "'docker save' failed with exit code $saveExitCode."
+        exit $saveExitCode
+    }
+
+    & sbx template load $tarPath
+    $loadExitCode = $LASTEXITCODE
+    if ($loadExitCode -ne 0) {
+        Write-Error "'sbx template load' failed with exit code $loadExitCode."
+        exit $loadExitCode
+    }
+}
+finally {
+    Remove-Item -LiteralPath $tarPath -ErrorAction SilentlyContinue
+}
+
+Write-Host "Image '$ImageTag' is now available to sbx (sandbox runtime image store)." -ForegroundColor Green
+
+Write-Host ""
 Write-Host -NoNewline "Store/update the Mistral API key now via 'sbx secret set mistral'? (y/N): "
 $secretAnswer = Read-Host
 if ($secretAnswer -match '^(y|yes)$') {
@@ -179,4 +192,6 @@ else {
 Write-Host ""
 Write-Host "Kit ready at '$kitDir'. Next steps:" -ForegroundColor Cyan
 Write-Host "      sbx kit validate `"$kitDir`"" -ForegroundColor Cyan
-Write-Host "      sbx run `"$kitDir`" --name mistral-vibe ." -ForegroundColor Cyan
+Write-Host "      sbx run `"$kitDir`" --name mistral-vibe --pull never ." -ForegroundColor Cyan
+Write-Host "(--pull never is required: the image was loaded directly into sbx's" -ForegroundColor DarkGray
+Write-Host " sandbox runtime store above, not pushed to a registry.)" -ForegroundColor DarkGray
