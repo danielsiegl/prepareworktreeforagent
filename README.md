@@ -1,6 +1,6 @@
 # prepareworktreeforagent
 
-Scripts that prepare a Git worktree for an AI coding agent (GitHub Copilot, OpenAI Codex, or Anthropic Claude). They create a new branch on top of your current feature branch and check it out as a separate worktree, then launch the chosen CLI agent inside that directory.
+Scripts that prepare a Git worktree for an AI coding agent (GitHub Copilot, OpenAI Codex, Anthropic Claude, or Mistral Vibe). They create a new branch on top of your current feature branch and check it out as a separate worktree, then launch the chosen CLI agent inside that directory.
 
 Three versions are available:
 
@@ -15,7 +15,7 @@ Three versions are available:
 ### PowerShell (Windows)
 
 ```powershell
-.\new-cli-worktree.ps1 [-repopath <path>] [-Cli <copilot|codex|claude>]
+.\new-cli-worktree.ps1 [-repopath <path>] [-Cli <copilot|codex|claude|vibe>]
 ```
 
 If `-repopath` is omitted, the script uses the current working directory.  
@@ -24,12 +24,12 @@ If `-Cli` is omitted, the script prompts interactively.
 #### Parameters
 
 - `-repopath <path>`: Path to the git repository to use.
-- `-Cli <copilot|codex|claude>`: CLI agent to start.
+- `-Cli <copilot|codex|claude|vibe>`: CLI agent to start.
 
 ### Bash (Linux / macOS / WSL)
 
 ```bash
-./new-cli-worktree.sh [-p <path>] [-c <copilot|codex|claude>]
+./new-cli-worktree.sh [-p <path>] [-c <copilot|codex|claude|vibe>]
 ```
 
 If `-p` is omitted, the script uses the current working directory.  
@@ -38,7 +38,7 @@ If `-c` is omitted, the script prompts interactively.
 #### Options
 
 - `-p <path>`: Path to the git repository to use.
-- `-c <copilot|codex|claude>`: CLI agent to start.
+- `-c <copilot|codex|claude|vibe>`: CLI agent to start.
 
 ### PowerShell with Docker Sandboxes (`new-cli-sbx.ps1`)
 
@@ -99,7 +99,7 @@ sandbox.
 2. Creates a new branch named `<current-branch>-<cli>` (e.g. `my-feature-copilot`).
 3. Adds a git worktree for that branch in a sibling directory named `<repo>-<new-branch>` (e.g. `../myrepo-my-feature-copilot`).
 4. Reuses the existing worktree if it was already created previously.
-5. Launches the selected CLI agent (`copilot`, `codex`, or `claude`) inside the new worktree directory.
+5. Launches the selected CLI agent (`copilot`, `codex`, `claude`, or `vibe`) inside the new worktree directory.
 
 `new-cli-sbx.ps1` instead launches the agent inside a Docker Sandbox, with no
 host worktree step — see above.
@@ -113,6 +113,7 @@ host worktree step — see above.
   - [GitHub Copilot CLI](https://githubnext.com/projects/copilot-cli) (`copilot`)
   - [OpenAI Codex CLI](https://github.com/openai/codex) (`codex`)
   - [Claude CLI](https://github.com/anthropics/claude-code) (`claude`)
+  - [Mistral Vibe CLI](https://github.com/mistralai/mistral-vibe) (`vibe`)
 
 ## Examples
 
