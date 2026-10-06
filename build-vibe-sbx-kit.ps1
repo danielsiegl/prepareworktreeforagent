@@ -66,6 +66,25 @@ function Test-DockerInstalled {
     return [bool](Get-Command -Name "docker" -ErrorAction SilentlyContinue)
 }
 
+function Test-DockerDaemonRunning {
+    # 'docker' can be on PATH while Docker Desktop's engine isn't running (e.g. the
+    # named pipe 'dockerDesktopLinuxEngine' doesn't exist yet). 'docker info' is a
+    # cheap way to confirm the daemon is actually reachable before attempting a build.
+    & docker info *> $null
+    return ($LASTEXITCODE -eq 0)
+}
+
+function Test-MistralSecretStored {
+    # 'sbx secret ls' prints a table; look for a "service" row named "mistral".
+    $lines = & sbx secret ls 2>$null
+    foreach ($line in $lines) {
+        if ($line -match '^\s*\S+\s+service\s+mistral\s') {
+            return $true
+        }
+    }
+    return $false
+}
+
 function Write-KitFile {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -118,6 +137,7 @@ displayName: Mistral Vibe
 
 sandbox:
   image: $ImageTag
+  entrypoint: ["vibe", "--agent", "auto-approve"]
 
 agentInstructions:
   filename: AGENTS.md
@@ -180,7 +200,14 @@ finally {
 Write-Host "Image '$ImageTag' is now available to sbx (sandbox runtime image store)." -ForegroundColor Green
 
 Write-Host ""
-Write-Host -NoNewline "Store/update the Mistral API key now via 'sbx secret set mistral'? (y/N): "
+if (Test-MistralSecretStored) {
+    Write-Host "A Mistral API key is already stored ('sbx secret ls' shows 'mistral')." -ForegroundColor Green
+    Write-Host -NoNewline "Replace/update it now via 'sbx secret set mistral'? (y/N): "
+}
+else {
+    Write-Host "No Mistral API key is currently stored." -ForegroundColor Yellow
+    Write-Host -NoNewline "Store it now via 'sbx secret set mistral'? (y/N): "
+}
 $secretAnswer = Read-Host
 if ($secretAnswer -match '^(y|yes)$') {
     & sbx secret set mistral
