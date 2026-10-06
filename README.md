@@ -70,13 +70,17 @@ script.
 `vibe` doesn't use a `sbx`-builtin agent template (there isn't one). Instead,
 this script automatically uses the local sandbox kit built by
 `build-vibe-sbx-kit.ps1` (see below), referencing it by path, e.g.
-`sbx run --clone --name <name> .\sbx-kits\mistral-vibe <repoRoot>`. **If the
-kit's image isn't found in `sbx`'s sandbox runtime image store yet, the
-script automatically runs `build-vibe-sbx-kit.ps1` for you first** — no
-manual setup step is required before using `-Cli vibe` /
-`start-vibe-sbx.ps1` for the first time. Before launching, the script also
-checks `sbx secret ls` and prints a warning if no Mistral API key is
-stored, since `vibe` will otherwise fail to call the Mistral API.
+`sbx run --clone --name <name> .\sbx-kits\mistral-vibe <repoRoot>`. **Run
+`build-vibe-sbx-kit.ps1` once before using `-Cli vibe` / `new-cli-vibe.ps1`
+for the first time** — if the kit isn't found, the script exits with an
+error telling you to build it first, instead of trying (and failing) with a
+plain `vibe` agent name. Before launching, the script also checks `sbx
+secret ls` and prints a warning if no Mistral API key is stored, since
+`vibe` will otherwise fail to call the Mistral API. It also checks `sbx
+template ls` to confirm the kit's image is actually loaded into sbx's
+sandbox runtime image store (not just that the kit files exist on disk) and
+warns if it's missing — e.g. after a Docker Desktop reset — telling you to
+re-run `build-vibe-sbx-kit.ps1`.
 
 `sbx run --clone` requires the *main* repository working directory — it
 refuses to run from a linked git worktree (e.g. one created by
@@ -142,7 +146,7 @@ one-time setup script follows Docker's guide
 to build your own local image and kit:
 
 ```powershell
-.\build-vibe-sbx-kit.ps1 [-VibeVersion <version>] [-ImageTag <tag>]
+.\build-vibe-sbx-kit.ps1 [-VibeVersion <version>] [-ImageTag <tag>] [-Force]
 ```
 
 It:
@@ -152,21 +156,28 @@ It:
    (wires the image to the Mistral API through the sandbox proxy, and
    declares the sandbox's network policy) under
    `sbx-kits\mistral-vibe\`.
-2. Builds the image **locally only** — single platform, no registry push,
+2. Checks `sbx template ls` to see whether `-ImageTag` is **already loaded**
+   into `sbx`'s own sandbox runtime image store, and if so asks before
+   spending several minutes rebuilding it (pass `-Force` to always rebuild,
+   e.g. after bumping `-VibeVersion`). Checking only whether the kit files
+   exist on disk isn't enough — the store can be emptied independently
+   (Docker Desktop reset, `sbx template rm`, a new machine) while the kit
+   files stay behind.
+3. Builds the image **locally only** — single platform, no registry push,
    tagged `sbx-mistral-vibe:local` by default (override with `-ImageTag`).
-3. Loads the built image into `sbx`'s own sandbox runtime image store via
+4. Loads the built image into `sbx`'s own sandbox runtime image store via
    `docker save` + `sbx template load`. This step is required: `sbx`'s
    `sandboxd` keeps a private image store that is **not** the same as
    Docker Desktop's regular image list, so a plain `docker build` is
    otherwise invisible to `sbx run` (it fails with `403 Forbidden: pull
    failed for image "sbx-mistral-vibe:local"`, since `sbx` tries to pull
    the tag from a registry that doesn't have it).
-4. Sets `sandbox.entrypoint: ["vibe", "--agent", "auto-approve"]` in the
+5. Sets `sandbox.entrypoint: ["vibe", "--agent", "auto-approve"]` in the
    generated `spec.yaml`. This is required: without it, `sbx run` attaches a
    plain shell instead of starting `vibe` (the Docker image's own `CMD` is
    not enough — `sbx` needs the kit's `entrypoint` field to know what to
    launch as the interactive agent session).
-5. Checks `sbx secret ls` and tells you whether a Mistral API key is
+6. Checks `sbx secret ls` and tells you whether a Mistral API key is
    already stored before asking whether to run `sbx secret set mistral` —
    so the sandbox proxy can inject your key without it ever entering the VM.
 
