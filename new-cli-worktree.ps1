@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Creates or reuses a git worktree and launches a CLI agent (copilot, codex, or claude).
+    Creates or reuses a git worktree and launches a CLI agent (copilot, codex, claude, or vibe).
 
 .DESCRIPTION
     Given a repository path and a CLI agent name, this script creates a new git branch
@@ -11,7 +11,7 @@
     Path to the git repository. Defaults to the current working directory.
 
 .PARAMETER Cli
-    The CLI agent to launch. Valid values: copilot, codex, claude.
+    The CLI agent to launch. Valid values: copilot, codex, claude, vibe.
 
 .EXAMPLE
     .\new-cli-worktree.ps1 -repopath "C:\repos\myrepo" -Cli copilot
@@ -22,7 +22,7 @@
 #>
 param(
     [string]$repopath,
-    [ValidateSet("copilot", "codex", "claude")]
+    [ValidateSet("copilot", "codex", "claude", "vibe")]
     [string]$Cli
 )
 
@@ -52,16 +52,17 @@ function Show-RandomMascot {
 }
 
 function Read-CliChoice {
-    $options = @("copilot", "codex", "claude")
+    $options = @("copilot", "codex", "claude", "vibe")
     Write-Host ""
     Write-Host "Select CLI agent:" -ForegroundColor Cyan
     Write-Host "  1) copilot"
     Write-Host "  2) codex"
     Write-Host "  3) claude"
+    Write-Host "  4) vibe"
     Write-Host ""
 
     while ($true) {
-        Write-Host -NoNewline "Enter 1, 2, or 3: "
+        Write-Host -NoNewline "Enter 1, 2, 3, or 4: "
         $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
         Write-Host $key.Character
 
@@ -69,7 +70,8 @@ function Read-CliChoice {
             '1' { return $options[0] }
             '2' { return $options[1] }
             '3' { return $options[2] }
-            default { Write-Host "Please press 1, 2, or 3." -ForegroundColor Yellow }
+            '4' { return $options[3] }
+            default { Write-Host "Please press 1, 2, 3, or 4." -ForegroundColor Yellow }
         }
     }
 }
@@ -211,6 +213,7 @@ Write-Host "Worktree   : $worktreeToUse"
 $cliCommand = switch ($Cli) {
     "codex" { "codex" }
     "claude" { "claude" }
+    "vibe" { "vibe" }
     default { "copilot" }
 }
 $cliExecutable = Get-Command -Name $cliCommand -ErrorAction SilentlyContinue
