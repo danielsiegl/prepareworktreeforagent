@@ -25,34 +25,52 @@ show_random_mascot() {
 }
 
 read_cli_choice() {
-    echo ""
-    printf '\033[0;36mSelect CLI agent:\033[0m\n'
-    echo "  1) copilot"
-    echo "  2) codex"
-    echo "  3) claude"
-    echo "  4) vibe"
-    echo ""
+    printf '\033[0;36mSelect CLI agent:\033[0m\n' >&2
+    local options=(copilot codex claude vibe)
+    local available_count=0
+    local i
+
+    for i in "${!options[@]}"; do
+        if command -v "${options[$i]}" >/dev/null 2>&1; then
+            printf '  %d) %s\n' "$((i + 1))" "${options[$i]}" >&2
+            ((available_count += 1))
+        else
+            printf '  %d) %s (not available)\n' "$((i + 1))" "${options[$i]}" >&2
+        fi
+    done
+    echo "" >&2
+
+    if (( available_count == 0 )); then
+        printf 'Error: none of the supported CLI agents are available on PATH.\n' >&2
+        return 1
+    fi
 
     while true; do
-        printf 'Enter 1, 2, 3, or 4: '
+        printf 'Enter 1, 2, 3, or 4: ' >&2
         # Read a single character without requiring Enter
         if [ -t 0 ]; then
             old_tty=$(stty -g)
             stty raw -echo
             key=$(dd bs=1 count=1 2>/dev/null)
             stty "$old_tty"
-            echo "$key"
+            echo "$key" >&2
         else
             read -r key
         fi
 
         case "$key" in
-            1) echo "copilot"; return ;;
-            2) echo "codex";   return ;;
-            3) echo "claude";  return ;;
-            4) echo "vibe";    return ;;
-            *) printf '\033[0;33mPlease press 1, 2, 3, or 4.\033[0m\n' ;;
+            1) i=0 ;;
+            2) i=1 ;;
+            3) i=2 ;;
+            4) i=3 ;;
+            *) printf '\033[0;33mPlease press 1, 2, 3, or 4.\033[0m\n' >&2; continue ;;
         esac
+
+        if command -v "${options[$i]}" >/dev/null 2>&1; then
+            printf '%s\n' "${options[$i]}"
+            return
+        fi
+        printf '\033[0;33m%s is not available on PATH. Choose an installed CLI agent.\033[0m\n' "${options[$i]}" >&2
     done
 }
 

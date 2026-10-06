@@ -53,13 +53,26 @@ function Show-RandomMascot {
 
 function Read-CliChoice {
     $options = @("copilot", "codex", "claude", "vibe")
+    $availableOptions = @{}
+    foreach ($option in $options) {
+        $availableOptions[$option] = [bool](Get-Command -Name $option -ErrorAction SilentlyContinue)
+    }
+
     Write-Host ""
     Write-Host "Select CLI agent:" -ForegroundColor Cyan
-    Write-Host "  1) copilot"
-    Write-Host "  2) codex"
-    Write-Host "  3) claude"
-    Write-Host "  4) vibe"
+    for ($i = 0; $i -lt $options.Count; $i++) {
+        $label = $options[$i]
+        if (-not $availableOptions[$label]) {
+            $label += " (not available)"
+        }
+        Write-Host "  $($i + 1)) $label"
+    }
     Write-Host ""
+
+    if (-not ($availableOptions.Values -contains $true)) {
+        Write-Error "None of the supported CLI agents are available on PATH."
+        exit 1
+    }
 
     while ($true) {
         Write-Host -NoNewline "Enter 1, 2, 3, or 4: "
@@ -67,12 +80,20 @@ function Read-CliChoice {
         Write-Host $key.Character
 
         switch ($key.Character) {
-            '1' { return $options[0] }
-            '2' { return $options[1] }
-            '3' { return $options[2] }
-            '4' { return $options[3] }
+            '1' { $selectedOption = $options[0] }
+            '2' { $selectedOption = $options[1] }
+            '3' { $selectedOption = $options[2] }
+            '4' { $selectedOption = $options[3] }
             default { Write-Host "Please press 1, 2, 3, or 4." -ForegroundColor Yellow }
         }
+
+        if ($key.Character -notin @('1', '2', '3', '4')) {
+            continue
+        }
+        if ($availableOptions[$selectedOption]) {
+            return $selectedOption
+        }
+        Write-Host "$selectedOption is not available on PATH. Choose an installed CLI agent." -ForegroundColor Yellow
     }
 }
 
