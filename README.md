@@ -6,7 +6,7 @@ Scripts that prepare an isolated environment for an AI coding agent (GitHub
 Copilot, OpenAI Codex, Anthropic Claude, or Mistral Vibe). The `worktree`
 scripts create a new branch on top of your current feature branch and check
 it out as a separate git worktree, then launch the chosen CLI agent inside
-that directory. `new-cli-sbx.ps1` instead launches the agent inside an
+that directory. `start-sbx.ps1` instead launches the agent inside an
 isolated Docker Sandbox and creates no git worktree at all — see below.
 
 The following scripts are available:
@@ -15,8 +15,8 @@ The following scripts are available:
 |---|---|
 | `new-cli-worktree.ps1` | Windows (PowerShell) |
 | `new-cli-worktree.sh` | Linux / macOS / WSL (Bash) |
-| `new-cli-sbx.ps1` | Windows (PowerShell) — runs the agent inside a [Docker Sandbox](https://docs.docker.com/ai/sandboxes/) instead of directly on the host, no host worktree needed |
-| `new-cli-vibe.ps1` | Windows (PowerShell) — shortcut for `new-cli-sbx.ps1 -Cli vibe` |
+| `start-sbx.ps1` | Windows (PowerShell) — runs the agent inside a [Docker Sandbox](https://docs.docker.com/ai/sandboxes/) instead of directly on the host, no host worktree needed |
+| `start-vibe-sbx.ps1` | Windows (PowerShell) — shortcut for `start-sbx.ps1 -Cli vibe` |
 | `build-vibe-sbx-kit.ps1` | Windows (PowerShell) — one-time setup: builds a local Docker Sandbox image/kit for Mistral Vibe, since `sbx` has no built-in template for it |
 
 ## Usage
@@ -51,10 +51,10 @@ CLIs that are not installed are marked as unavailable and cannot be selected.
 - `-p <path>`: Path to the git repository to use.
 - `-c <copilot|codex|claude|vibe>`: CLI agent to start.
 
-### PowerShell with Docker Sandboxes (`new-cli-sbx.ps1`)
+### PowerShell with Docker Sandboxes (`start-sbx.ps1`)
 
 ```powershell
-.\new-cli-sbx.ps1 [-repopath <path>] [-Cli <copilot|codex|claude|vibe>]
+.\start-sbx.ps1 [-repopath <path>] [-Cli <copilot|codex|claude|vibe>]
 ```
 
 Instead of creating a git worktree on the host and launching the CLI agent
@@ -71,7 +71,7 @@ script.
 this script automatically uses the local sandbox kit built by
 `build-vibe-sbx-kit.ps1` (see below), referencing it by path, e.g.
 `sbx run --clone --name <name> .\sbx-kits\mistral-vibe <repoRoot>`. **Run
-`build-vibe-sbx-kit.ps1` once before using `-Cli vibe` / `new-cli-vibe.ps1`
+`build-vibe-sbx-kit.ps1` once before using `-Cli vibe` / `start-vibe-sbx.ps1`
 for the first time** — if the kit isn't found, the script exits with an
 error telling you to build it first, instead of trying (and failing) with a
 plain `vibe` agent name. Before launching, the script also checks `sbx
@@ -123,16 +123,16 @@ browser login; not automated by this script).
 > inside the sandbox (that goes out over the network, not through the
 > read-only host mount, so it works).
 
-### `new-cli-vibe.ps1` — shortcut for Mistral Vibe
+### `start-vibe-sbx.ps1` — shortcut for Mistral Vibe
 
 ```powershell
-.\new-cli-vibe.ps1 [-repopath <path>]
+.\start-vibe-sbx.ps1 [-repopath <path>]
 ```
 
-Thin wrapper that calls `new-cli-sbx.ps1 -Cli vibe` for you, so you don't
+Thin wrapper that calls `start-sbx.ps1 -Cli vibe` for you, so you don't
 need to pass `-Cli vibe` or answer the interactive CLI-agent menu. Everything
 else (sbx auto-install, clone-mode launch, automatic post-run `git fetch`) is
-identical to `new-cli-sbx.ps1` — see above.
+identical to `start-sbx.ps1` — see above.
 
 ### `build-vibe-sbx-kit.ps1` — one-time setup for Mistral Vibe
 
@@ -186,7 +186,7 @@ Prerequisites: Docker Desktop/Engine running, `sbx` installed and signed in,
 and a [Mistral API key](https://chat.mistral.ai/code/extensions?focus=key).
 
 > [!NOTE]
-> Once this kit is built, `new-cli-sbx.ps1 -Cli vibe` and `new-cli-vibe.ps1`
+> Once this kit is built, `start-sbx.ps1 -Cli vibe` and `start-vibe-sbx.ps1`
 > use it automatically (referencing `sbx-kits\mistral-vibe` by path, with
 > `--pull never`, instead of passing the plain agent name `vibe`, which
 > `sbx run` can't resolve on its own). You can still run the kit directly
@@ -201,13 +201,13 @@ and a [Mistral API key](https://chat.mistral.ai/code/extensions?focus=key).
 4. Reuses the existing worktree if it was already created previously.
 5. Launches the selected CLI agent (`copilot`, `codex`, `claude`, or `vibe`) inside the new worktree directory.
 
-`new-cli-sbx.ps1` instead launches the agent inside a Docker Sandbox, with no
+`start-sbx.ps1` instead launches the agent inside a Docker Sandbox, with no
 host worktree step — see above.
 
 ## Requirements
 
 - Git must be installed and available on `PATH`.
-- For `new-cli-sbx.ps1` / `new-cli-vibe.ps1`: the [Docker Sandboxes `sbx` CLI](https://docs.docker.com/ai/sandboxes/install/)
+- For `start-sbx.ps1` / `start-vibe-sbx.ps1`: the [Docker Sandboxes `sbx` CLI](https://docs.docker.com/ai/sandboxes/install/)
   (auto-installed via `winget` if missing) and a one-time `sbx login`.
 - For `build-vibe-sbx-kit.ps1`: Docker Desktop/Engine running, `sbx` installed
   and signed in, and a [Mistral API key](https://chat.mistral.ai/code/extensions?focus=key).
@@ -233,15 +233,15 @@ host worktree step — see above.
 
 ```powershell
 # PowerShell + Docker Sandboxes — from inside your repo
-.\new-cli-sbx.ps1 -Cli copilot
+.\start-sbx.ps1 -Cli copilot
 # Starts Copilot inside a Docker Sandbox (clone mode) named '<repo>-copilot';
 # ask the agent to create its own branch, e.g. 'my-feature-copilot'
 ```
 
 ```powershell
 # PowerShell + Docker Sandboxes — Mistral Vibe shortcut
-.\new-cli-vibe.ps1
-# Same as '.\new-cli-sbx.ps1 -Cli vibe', no CLI-agent prompt
+.\start-vibe-sbx.ps1
+# Same as '.\start-sbx.ps1 -Cli vibe', no CLI-agent prompt
 ```
 
 ```powershell
