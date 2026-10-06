@@ -40,6 +40,11 @@
     Defaults to "sbx-mistral-vibe:local". No registry/namespace is used or required
     since this is a local-only build.
 
+.PARAMETER Force
+    Rebuild and reload the image even if 'sbx template ls' shows it's already loaded
+    into sbx's sandbox runtime image store. Without this switch, the script detects an
+    already-loaded image and asks before spending several minutes rebuilding it.
+
 .EXAMPLE
     .\build-vibe-sbx-kit.ps1
 
@@ -55,7 +60,8 @@
 #>
 param(
     [string]$VibeVersion = "2.24.5",
-    [string]$ImageTag = "sbx-mistral-vibe:local"
+    [string]$ImageTag = "sbx-mistral-vibe:local",
+    [switch]$Force
 )
 
 function Test-SbxInstalled {
@@ -79,6 +85,34 @@ function Test-MistralSecretStored {
     $lines = & sbx secret ls 2>$null
     foreach ($line in $lines) {
         if ($line -match '^\s*\S+\s+service\s+mistral\s') {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Test-SbxTemplateLoaded {
+    # 'sbx' keeps its own private image store (separate from Docker Desktop's regular
+    # image list) populated via 'sbx template load'. Checking only whether the kit's
+    # spec.yaml exists on disk is not enough -- the store can be emptied independently
+    # (e.g. 'sbx template rm', a Docker Desktop reset, or a fresh machine) while the kit
+    # files stay on disk, which reproduces the old "403 Forbidden: pull failed" error.
+    # 'sbx template ls' prints: REPOSITORY  TAG  IMAGE ID  FLAVOR  CREATED
+    param(
+        [Parameter(Mandatory = $true)][string]$ImageTag
+    )
+
+    $repo, $tag = $ImageTag -split ':', 2
+    if (-not $tag) { $tag = "latest" }
+
+    $lines = & sbx template ls 2>$null
+    foreach ($line in $lines) {
+        $cols = $line -split '\s+'
+        if ($cols.Count -lt 2) { continue }
+        # The store namespaces local builds under a registry-style prefix, e.g.
+        # 'docker.io/library/sbx-mistral-vibe' for a plain 'sbx-mistral-vibe' tag, so
+        # match on the repository *suffix* rather than requiring an exact string match.
+        if (($cols[0] -eq $repo -or $cols[0].EndsWith("/$repo")) -and $cols[1] -eq $tag) {
             return $true
         }
     }
@@ -163,41 +197,55 @@ credentials:
 Write-KitFile -Path $dockerfilePath -Content $dockerfileContent
 Write-KitFile -Path $specPath -Content $specContent
 
-Write-Host ""
-Write-Host "Building local image '$ImageTag' (VIBE_VERSION=$VibeVersion)..." -ForegroundColor Cyan
-& docker build -t $ImageTag --build-arg "VIBE_VERSION=$VibeVersion" $kitDir
-$buildExitCode = $LASTEXITCODE
-
-if ($buildExitCode -ne 0) {
-    Write-Error "'docker build' failed with exit code $buildExitCode."
-    exit $buildExitCode
-}
-
-Write-Host "Image '$ImageTag' built successfully." -ForegroundColor Green
-
-Write-Host ""
-Write-Host "Loading '$ImageTag' into sbx's sandbox runtime image store..." -ForegroundColor Cyan
-$tarPath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "sbx-mistral-vibe-$([guid]::NewGuid().ToString('N')).tar"
-try {
-    & docker save -o $tarPath $ImageTag
-    $saveExitCode = $LASTEXITCODE
-    if ($saveExitCode -ne 0) {
-        Write-Error "'docker save' failed with exit code $saveExitCode."
-        exit $saveExitCode
-    }
-
-    & sbx template load $tarPath
-    $loadExitCode = $LASTEXITCODE
-    if ($loadExitCode -ne 0) {
-        Write-Error "'sbx template load' failed with exit code $loadExitCode."
-        exit $loadExitCode
+$skipBuild = $false
+if (-not $Force -and (Test-SbxTemplateLoaded -ImageTag $ImageTag)) {
+    Write-Host ""
+    Write-Host "Image '$ImageTag' is already loaded into sbx's template store ('sbx template ls')." -ForegroundColor Green
+    Write-Host -NoNewline "Rebuild and reload it anyway, e.g. to pick up a new -VibeVersion? (y/N): "
+    $rebuildAnswer = Read-Host
+    if ($rebuildAnswer -notmatch '^(y|yes)$') {
+        $skipBuild = $true
+        Write-Host "Skipping build/save/load -- using the already-loaded image." -ForegroundColor Yellow
     }
 }
-finally {
-    Remove-Item -LiteralPath $tarPath -ErrorAction SilentlyContinue
-}
 
-Write-Host "Image '$ImageTag' is now available to sbx (sandbox runtime image store)." -ForegroundColor Green
+if (-not $skipBuild) {
+    Write-Host ""
+    Write-Host "Building local image '$ImageTag' (VIBE_VERSION=$VibeVersion)..." -ForegroundColor Cyan
+    & docker build -t $ImageTag --build-arg "VIBE_VERSION=$VibeVersion" $kitDir
+    $buildExitCode = $LASTEXITCODE
+
+    if ($buildExitCode -ne 0) {
+        Write-Error "'docker build' failed with exit code $buildExitCode."
+        exit $buildExitCode
+    }
+
+    Write-Host "Image '$ImageTag' built successfully." -ForegroundColor Green
+
+    Write-Host ""
+    Write-Host "Loading '$ImageTag' into sbx's sandbox runtime image store..." -ForegroundColor Cyan
+    $tarPath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "sbx-mistral-vibe-$([guid]::NewGuid().ToString('N')).tar"
+    try {
+        & docker save -o $tarPath $ImageTag
+        $saveExitCode = $LASTEXITCODE
+        if ($saveExitCode -ne 0) {
+            Write-Error "'docker save' failed with exit code $saveExitCode."
+            exit $saveExitCode
+        }
+
+        & sbx template load $tarPath
+        $loadExitCode = $LASTEXITCODE
+        if ($loadExitCode -ne 0) {
+            Write-Error "'sbx template load' failed with exit code $loadExitCode."
+            exit $loadExitCode
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $tarPath -ErrorAction SilentlyContinue
+    }
+
+    Write-Host "Image '$ImageTag' is now available to sbx (sandbox runtime image store)." -ForegroundColor Green
+}
 
 Write-Host ""
 if (Test-MistralSecretStored) {
