@@ -1,5 +1,7 @@
 # prepareworktreeforagent
 
+![Maintained](https://img.shields.io/badge/maintained-yes-brightgreen.svg)
+
 Scripts that prepare an isolated environment for an AI coding agent (GitHub
 Copilot, OpenAI Codex, Anthropic Claude, or Mistral Vibe). The `worktree`
 scripts create a new branch on top of your current feature branch and check
