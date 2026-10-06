@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Launches a CLI agent (copilot, codex, or claude) inside a Docker Sandbox (sbx)
+    Launches a CLI agent (copilot, codex, claude, or vibe) inside a Docker Sandbox (sbx)
     using clone mode for isolation and good performance.
 
 .DESCRIPTION
@@ -25,7 +25,9 @@
     working directory.
 
 .PARAMETER Cli
-    The CLI agent to launch. Valid values: copilot, codex, claude.
+    The CLI agent to launch. Valid values: copilot, codex, claude, vibe. Note: unlike
+    copilot/codex/claude, `sbx` has no officially documented built-in template for
+    `vibe` — it's passed straight through, and `sbx run` may fail to resolve it.
 
 .EXAMPLE
     .\new-cli-sbx.ps1 -repopath "C:\repos\myrepo" -Cli copilot
@@ -36,15 +38,18 @@
 
 .NOTES
     Once the sandbox starts, ask the agent to create a branch before it starts editing,
-    e.g. "Create a branch <branch-name> and make the changes." After the agent is done,
-    fetch its branch back to the host with:
-        git fetch sandbox-<name>
-        git log sandbox-<name>/<branch-name>
-    or ask the agent to push the branch to origin directly.
+    e.g. "Create a branch <branch-name> and make the changes." The agent CANNOT fetch or
+    pull its own changes back to the host: your host repo is mounted read-only inside the
+    sandbox, so running git fetch/pull from inside the agent session fails. This script
+    runs 'git fetch sandbox-<name>' on the host automatically once the sandbox session
+    ends, and lists the branches it fetched. After that, check out/merge the branch and
+    push to origin with your own credentials. (The agent can also push directly to origin
+    itself if you give it push access/credentials, since that goes out over the network
+    rather than through the read-only host mount.)
 #>
 param(
     [string]$repopath,
-    [ValidateSet("copilot", "codex", "claude")]
+    [ValidateSet("copilot", "codex", "claude", "vibe")]
     [string]$Cli
 )
 
@@ -74,16 +79,17 @@ function Show-RandomMascot {
 }
 
 function Read-CliChoice {
-    $options = @("copilot", "codex", "claude")
+    $options = @("copilot", "codex", "claude", "vibe")
     Write-Host ""
     Write-Host "Select CLI agent:" -ForegroundColor Cyan
     Write-Host "  1) copilot"
     Write-Host "  2) codex"
     Write-Host "  3) claude"
+    Write-Host "  4) vibe"
     Write-Host ""
 
     while ($true) {
-        Write-Host -NoNewline "Enter 1, 2, or 3: "
+        Write-Host -NoNewline "Enter 1, 2, 3, or 4: "
         $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
         Write-Host $key.Character
 
@@ -91,7 +97,8 @@ function Read-CliChoice {
             '1' { return $options[0] }
             '2' { return $options[1] }
             '3' { return $options[2] }
-            default { Write-Host "Please press 1, 2, or 3." -ForegroundColor Yellow }
+            '4' { return $options[3] }
+            default { Write-Host "Please press 1, 2, 3, or 4." -ForegroundColor Yellow }
         }
     }
 }
@@ -239,14 +246,42 @@ Write-Host "Repository : $repoRoot"
 Write-Host "Sandbox    : $sandboxName"
 
 Write-Host "Starting '$Cli' in Docker Sandbox (clone mode) '$sandboxName' for repo '$repoRoot'..."
-Write-Host "Note: the agent works on a private in-sandbox clone, isolated from your host working tree." -ForegroundColor Cyan
+Write-Host "Note: the agent works on a private in-sandbox clone, isolated from your host repo checkout." -ForegroundColor Cyan
 Write-Host "Ask the agent to create a branch before editing, e.g.:" -ForegroundColor Cyan
 Write-Host "      Create a branch '$suggestedBranch' and make the changes." -ForegroundColor Cyan
-Write-Host "When it's done, fetch the branch back to the host with:" -ForegroundColor Cyan
-Write-Host "      git fetch sandbox-$sandboxName" -ForegroundColor Cyan
+Write-Host "IMPORTANT: the agent cannot fetch/pull its own changes back to this host." -ForegroundColor Yellow
+Write-Host "Your host repo is mounted read-only inside the sandbox (/run/sandbox/source)," -ForegroundColor Yellow
+Write-Host "so 'git fetch'/'git pull' will fail if the agent runs them itself. This script" -ForegroundColor Yellow
+Write-Host "will automatically run 'git fetch' from the host once the sandbox session ends." -ForegroundColor Yellow
 
 & sbx run --clone --name $sandboxName $Cli $repoRoot
 $sbxExitCode = $LASTEXITCODE
+
+Write-Host ""
+Write-Host "Sandbox session ended. Fetching the agent's work into this host repo..." -ForegroundColor Cyan
+
+$sandboxRemote = "sandbox-$sandboxName"
+& git -C $repoRoot fetch $sandboxRemote 2>&1 | ForEach-Object { Write-Host "  $_" }
+$fetchExitCode = $LASTEXITCODE
+
+if ($fetchExitCode -eq 0) {
+    Write-Host "Fetched '$sandboxRemote'. Branches available from the sandbox:" -ForegroundColor Green
+    $remoteBranches = & git -C $repoRoot branch -r --list "$sandboxRemote/*"
+    if ($remoteBranches) {
+        $remoteBranches | ForEach-Object { Write-Host "  $($_.Trim())" }
+        Write-Host "Check out a branch on the host with, e.g.:" -ForegroundColor Cyan
+        Write-Host "      git -C `"$repoRoot`" checkout -b <branch-name> $sandboxRemote/<branch-name>" -ForegroundColor Cyan
+        Write-Host "Then push to origin with your own credentials." -ForegroundColor Cyan
+    }
+    else {
+        Write-Warning "No branches found under '$sandboxRemote/'. Did the agent create/commit a branch before the session ended?"
+    }
+}
+else {
+    Write-Warning "Automatic 'git fetch $sandboxRemote' failed (exit code $fetchExitCode). The sandbox may have already stopped/been removed."
+    Write-Warning "If the sandbox is still running, fetch manually from the host with:"
+    Write-Warning "      git fetch $sandboxRemote"
+}
 
 if ($sbxExitCode -ne 0) {
     Write-Error "'sbx run' exited with code $sbxExitCode."
