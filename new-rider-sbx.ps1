@@ -100,8 +100,9 @@ if (& git -C $repoRoot status --porcelain) {
     Write-Warning "commit (or stash) first if the agent should see them."
 }
 
-$repoName = Split-Path -Path $repoRoot -Leaf
-$sandboxName = ("rider-$repoName-$currentBranch".ToLowerInvariant() -replace '[^a-z0-9-]', '-') -replace '-+', '-'
+# sbx caps sandbox names at 63 characters.
+$sandboxName = "sbx-" + (($currentBranch.ToLowerInvariant() -replace '[^a-z0-9-]', '-') -replace '-+', '-')
+$sandboxName = $sandboxName.Substring(0, [Math]::Min(63, $sandboxName.Length)).TrimEnd('-')
 $kitPath = Join-Path -Path $PSScriptRoot -ChildPath "rider-sbx"
 Write-Host "Repository : $repoRoot"
 Write-Host "Branch     : $currentBranch"
