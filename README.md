@@ -67,10 +67,16 @@ passthrough. Because the clone itself provides isolation (the agent creates
 its own branch inside it), **no host git worktree is created** for this
 script.
 
-`vibe` is passed straight through like the other agents, but unlike
-`copilot`/`codex`/`claude`, `sbx` has no officially documented built-in
-template for it — `sbx run` may fail to resolve it unless you've set up a
-custom kit yourself.
+`vibe` doesn't use a `sbx`-builtin agent template (there isn't one). Instead,
+this script automatically uses the local sandbox kit built by
+`build-vibe-sbx-kit.ps1` (see below), referencing it by path, e.g.
+`sbx run --clone --name <name> .\sbx-kits\mistral-vibe <repoRoot>`. **Run
+`build-vibe-sbx-kit.ps1` once before using `-Cli vibe` / `new-cli-vibe.ps1`
+for the first time** — if the kit isn't found, the script exits with an
+error telling you to build it first, instead of trying (and failing) with a
+plain `vibe` agent name. Before launching, the script also checks `sbx
+secret ls` and prints a warning if no Mistral API key is stored, since
+`vibe` will otherwise fail to call the Mistral API.
 
 `sbx run --clone` requires the *main* repository working directory — it
 refuses to run from a linked git worktree (e.g. one created by
@@ -155,8 +161,14 @@ It:
    otherwise invisible to `sbx run` (it fails with `403 Forbidden: pull
    failed for image "sbx-mistral-vibe:local"`, since `sbx` tries to pull
    the tag from a registry that doesn't have it).
-4. Optionally runs `sbx secret set mistral` so the sandbox proxy can inject
-   your Mistral API key without it ever entering the VM.
+4. Sets `sandbox.entrypoint: ["vibe", "--agent", "auto-approve"]` in the
+   generated `spec.yaml`. This is required: without it, `sbx run` attaches a
+   plain shell instead of starting `vibe` (the Docker image's own `CMD` is
+   not enough — `sbx` needs the kit's `entrypoint` field to know what to
+   launch as the interactive agent session).
+5. Checks `sbx secret ls` and tells you whether a Mistral API key is
+   already stored before asking whether to run `sbx secret set mistral` —
+   so the sandbox proxy can inject your key without it ever entering the VM.
 
 It does **not** run `sbx kit validate` or `sbx run` automatically — it
 prints the exact commands to run yourself once you're ready:

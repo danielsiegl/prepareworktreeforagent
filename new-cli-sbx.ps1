@@ -108,6 +108,17 @@ function Test-SbxInstalled {
     return [bool](Get-Command -Name "sbx" -ErrorAction SilentlyContinue)
 }
 
+function Test-MistralSecretStored {
+    # 'sbx secret ls' prints a table; look for a "service" row named "mistral".
+    $lines = & sbx secret ls 2>$null
+    foreach ($line in $lines) {
+        if ($line -match '^\s*\S+\s+service\s+mistral\s') {
+            return $true
+        }
+    }
+    return $false
+}
+
 function Update-SessionPathFromRegistry {
     # winget updates the Machine/User PATH in the registry, but the current PowerShell
     # process keeps the PATH it started with. Re-read both and merge them into $env:PATH
@@ -263,6 +274,10 @@ if ($Cli -eq "vibe") {
     # pull it from a registry and fails with "403 Forbidden".
     $pullArgs = @("--pull", "never")
     Write-Host "Using local Mistral Vibe kit: $agentArg" -ForegroundColor Cyan
+
+    if (-not (Test-MistralSecretStored)) {
+        Write-Warning "No Mistral API key is stored ('sbx secret ls' has no 'mistral' entry). Vibe will fail to call the Mistral API until you run: sbx secret set mistral"
+    }
 }
 
 Write-Host "Repository : $repoRoot"

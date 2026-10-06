@@ -5,6 +5,7 @@ displayName: Mistral Vibe
 
 sandbox:
   image: sbx-mistral-vibe:local
+  entrypoint: ["vibe", "--agent", "auto-approve"]
 
 agentInstructions:
   filename: AGENTS.md
