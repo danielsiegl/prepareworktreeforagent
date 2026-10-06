@@ -20,6 +20,7 @@ Three versions are available:
 
 If `-repopath` is omitted, the script uses the current working directory.  
 If `-Cli` is omitted, the script prompts interactively.
+CLIs that are not installed are marked as unavailable and cannot be selected.
 
 #### Parameters
 
@@ -34,6 +35,7 @@ If `-Cli` is omitted, the script prompts interactively.
 
 If `-p` is omitted, the script uses the current working directory.  
 If `-c` is omitted, the script prompts interactively.
+CLIs that are not installed are marked as unavailable and cannot be selected.
 
 #### Options
 
