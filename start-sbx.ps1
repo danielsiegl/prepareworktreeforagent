@@ -108,41 +108,6 @@ function Test-SbxInstalled {
     return [bool](Get-Command -Name "sbx" -ErrorAction SilentlyContinue)
 }
 
-function Get-VibeKitImageTag {
-    # Reads the 'sandbox.image:' tag out of the kit's spec.yaml so we can check
-    # whether that exact image is actually present, not just that the kit files exist.
-    param([Parameter(Mandatory = $true)][string]$SpecPath)
-
-    if (-not (Test-Path -LiteralPath $SpecPath)) {
-        return $null
-    }
-
-    $match = Select-String -LiteralPath $SpecPath -Pattern '^\s*image:\s*(\S+)' | Select-Object -First 1
-    if ($match) {
-        return $match.Matches[0].Groups[1].Value
-    }
-    return $null
-}
-
-function Test-VibeImagePresent {
-    # The kit's image is loaded directly into sbx's own sandbox runtime image store
-    # (via 'sbx template load' in build-vibe-sbx-kit.ps1), not Docker's regular image
-    # list, so check for it there instead of 'docker image inspect'.
-    param([string]$ImageTag)
-
-    if ([string]::IsNullOrWhiteSpace($ImageTag)) {
-        return $false
-    }
-
-    $templates = & sbx template ls 2>$null
-    foreach ($line in $templates) {
-        if ($line -match [regex]::Escape($ImageTag)) {
-            return $true
-        }
-    }
-    return $false
-}
-
 function Test-MistralSecretStored {
     # 'sbx secret ls' prints a table; look for a "service" row named "mistral".
     $lines = & sbx secret ls 2>$null
@@ -188,6 +153,10 @@ function Get-SpecImageTag {
     param(
         [Parameter(Mandatory = $true)][string]$SpecPath
     )
+
+    if (-not (Test-Path -LiteralPath $SpecPath)) {
+        return $null
+    }
 
     foreach ($line in Get-Content -LiteralPath $SpecPath) {
         if ($line -match '^\s*image:\s*(\S+)\s*$') {
@@ -341,14 +310,14 @@ if ($Cli -eq "vibe") {
     # instead, referencing it by directory path, which 'sbx' accepts as an explicit kit.
     $vibeKitDir = Join-Path -Path $PSScriptRoot -ChildPath "sbx-kits\mistral-vibe"
     $vibeKitSpec = Join-Path -Path $vibeKitDir -ChildPath "spec.yaml"
-    $vibeImageTag = Get-VibeKitImageTag -SpecPath $vibeKitSpec
-    if (-not (Test-VibeImagePresent -ImageTag $vibeImageTag)) {
+    $vibeImageTag = Get-SpecImageTag -SpecPath $vibeKitSpec
+    if (-not (Test-SbxTemplateLoaded -ImageTag $vibeImageTag)) {
         Write-Host "No local Mistral Vibe sandbox image found. 'sbx' has no built-in 'vibe' agent, so building one now via '.\build-vibe-sbx-kit.ps1'..." -ForegroundColor Yellow
         $buildScript = Join-Path -Path $PSScriptRoot -ChildPath "build-vibe-sbx-kit.ps1"
         & $buildScript
         $buildKitExitCode = $LASTEXITCODE
-        $vibeImageTag = Get-VibeKitImageTag -SpecPath $vibeKitSpec
-        if ($buildKitExitCode -ne 0 -or -not (Test-Path -LiteralPath $vibeKitSpec) -or -not (Test-VibeImagePresent -ImageTag $vibeImageTag)) {
+        $vibeImageTag = Get-SpecImageTag -SpecPath $vibeKitSpec
+        if ($buildKitExitCode -ne 0 -or -not (Test-Path -LiteralPath $vibeKitSpec) -or -not (Test-SbxTemplateLoaded -ImageTag $vibeImageTag)) {
             Write-Error "Failed to build the Mistral Vibe sandbox kit. Run '.\build-vibe-sbx-kit.ps1' manually to see the error, then re-run this script."
             exit 1
         }
