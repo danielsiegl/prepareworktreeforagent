@@ -31,10 +31,10 @@
     yet, this script builds it automatically before continuing.
 
 .EXAMPLE
-    .\new-cli-sbx.ps1 -repopath "C:\repos\myrepo" -Cli copilot
+    .\start-sbx.ps1 -repopath "C:\repos\myrepo" -Cli copilot
 
 .EXAMPLE
-    .\new-cli-sbx.ps1
+    .\start-sbx.ps1
     # Prompts interactively for CLI agent selection.
 
 .NOTES
