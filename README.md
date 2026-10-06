@@ -183,7 +183,7 @@ sandbox runtime store above, not pushed to a registry, so the default
 `--pull always`/`missing` policies would still try (and fail) to pull it.
 
 Prerequisites: Docker Desktop/Engine running, `sbx` installed and signed in,
-and a [Mistral API key](https://console.mistral.ai/).
+and a [Mistral API key](https://chat.mistral.ai/code/extensions?focus=key).
 
 > [!NOTE]
 > Once this kit is built, `new-cli-sbx.ps1 -Cli vibe` and `new-cli-vibe.ps1`
@@ -210,7 +210,7 @@ host worktree step — see above.
 - For `new-cli-sbx.ps1` / `new-cli-vibe.ps1`: the [Docker Sandboxes `sbx` CLI](https://docs.docker.com/ai/sandboxes/install/)
   (auto-installed via `winget` if missing) and a one-time `sbx login`.
 - For `build-vibe-sbx-kit.ps1`: Docker Desktop/Engine running, `sbx` installed
-  and signed in, and a [Mistral API key](https://console.mistral.ai/).
+  and signed in, and a [Mistral API key](https://chat.mistral.ai/code/extensions?focus=key).
 - At least one of the supported CLI tools must be installed:
   - [GitHub Copilot CLI](https://githubnext.com/projects/copilot-cli) (`copilot`)
   - [OpenAI Codex CLI](https://github.com/openai/codex) (`codex`)
