@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Creates or reuses a git worktree and launches a CLI agent (copilot, codex, or claude).
+# Creates or reuses a git worktree and launches a CLI agent (copilot, codex, claude, or vibe).
 #
 # Usage: ./new-cli-worktree.sh [-p <repopath>] [-c <cli>]
 #   -p  Path to the git repository (default: current directory)
-#   -c  CLI agent to launch: copilot | codex | claude
+#   -c  CLI agent to launch: copilot | codex | claude | vibe
 
 set -euo pipefail
 
@@ -30,10 +30,11 @@ read_cli_choice() {
     echo "  1) copilot"
     echo "  2) codex"
     echo "  3) claude"
+    echo "  4) vibe"
     echo ""
 
     while true; do
-        printf 'Enter 1, 2, or 3: '
+        printf 'Enter 1, 2, 3, or 4: '
         # Read a single character without requiring Enter
         if [ -t 0 ]; then
             old_tty=$(stty -g)
@@ -49,7 +50,8 @@ read_cli_choice() {
             1) echo "copilot"; return ;;
             2) echo "codex";   return ;;
             3) echo "claude";  return ;;
-            *) printf '\033[0;33mPlease press 1, 2, or 3.\033[0m\n' ;;
+            4) echo "vibe";    return ;;
+            *) printf '\033[0;33mPlease press 1, 2, 3, or 4.\033[0m\n' ;;
         esac
     done
 }
@@ -89,8 +91,8 @@ if [ -z "$cli_arg" ]; then
 fi
 
 case "$cli_arg" in
-    copilot|codex|claude) ;;
-    *) echo "Invalid CLI '$cli_arg'. Choose copilot, codex, or claude." >&2; exit 1 ;;
+    copilot|codex|claude|vibe) ;;
+    *) echo "Invalid CLI '$cli_arg'. Choose copilot, codex, claude, or vibe." >&2; exit 1 ;;
 esac
 
 # ---------- validate git repo ----------
