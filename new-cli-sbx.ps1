@@ -25,9 +25,10 @@
     working directory.
 
 .PARAMETER Cli
-    The CLI agent to launch. Valid values: copilot, codex, claude, vibe. Note: unlike
-    copilot/codex/claude, `sbx` has no officially documented built-in template for
-    `vibe` — it's passed straight through, and `sbx run` may fail to resolve it.
+    The CLI agent to launch. Valid values: copilot, codex, claude, vibe. Note: `sbx` has
+    no officially documented built-in template for `vibe` — this script instead uses the
+    local sandbox kit built by `build-vibe-sbx-kit.ps1` (run that script first; if the kit
+    isn't found, this script exits with an error telling you to build it).
 
 .EXAMPLE
     .\new-cli-sbx.ps1 -repopath "C:\repos\myrepo" -Cli copilot
@@ -242,6 +243,22 @@ $repoName = Split-Path -Path $repoRoot -Leaf
 $suggestedBranch = "$currentBranch-$Cli"
 $sandboxName = ("$repoName-$Cli" -replace '[^a-zA-Z0-9_.-]', '-')
 
+$agentArg = $Cli
+if ($Cli -eq "vibe") {
+    # 'sbx' has no built-in 'vibe' agent template (its error lists only: claude, codex,
+    # copilot, cursor, devin, docker-agent, droid, gemini, kiro, opencode, shell) - passing
+    # the plain name "vibe" always fails. Use the local kit built by build-vibe-sbx-kit.ps1
+    # instead, referencing it by directory path, which 'sbx' accepts as an explicit kit.
+    $vibeKitDir = Join-Path -Path $PSScriptRoot -ChildPath "sbx-kits\mistral-vibe"
+    $vibeKitSpec = Join-Path -Path $vibeKitDir -ChildPath "spec.yaml"
+    if (-not (Test-Path -LiteralPath $vibeKitSpec)) {
+        Write-Error "No local Mistral Vibe sandbox kit found at '$vibeKitDir'. 'sbx' has no built-in 'vibe' agent, so you need to build one first: run '.\build-vibe-sbx-kit.ps1', then re-run this script."
+        exit 1
+    }
+    $agentArg = $vibeKitDir
+    Write-Host "Using local Mistral Vibe kit: $agentArg" -ForegroundColor Cyan
+}
+
 Write-Host "Repository : $repoRoot"
 Write-Host "Sandbox    : $sandboxName"
 
@@ -254,7 +271,7 @@ Write-Host "Your host repo is mounted read-only inside the sandbox (/run/sandbox
 Write-Host "so 'git fetch'/'git pull' will fail if the agent runs them itself. This script" -ForegroundColor Yellow
 Write-Host "will automatically run 'git fetch' from the host once the sandbox session ends." -ForegroundColor Yellow
 
-& sbx run --clone --name $sandboxName $Cli $repoRoot
+& sbx run --clone --name $sandboxName $agentArg $repoRoot
 $sbxExitCode = $LASTEXITCODE
 
 Write-Host ""

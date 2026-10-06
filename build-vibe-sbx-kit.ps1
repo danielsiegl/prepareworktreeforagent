@@ -65,6 +65,14 @@ function Test-DockerInstalled {
     return [bool](Get-Command -Name "docker" -ErrorAction SilentlyContinue)
 }
 
+function Test-DockerDaemonRunning {
+    # 'docker' can be on PATH while Docker Desktop's engine isn't running (e.g. the
+    # named pipe 'dockerDesktopLinuxEngine' doesn't exist yet). 'docker info' is a
+    # cheap way to confirm the daemon is actually reachable before attempting a build.
+    & docker info *> $null
+    return ($LASTEXITCODE -eq 0)
+}
+
 function Write-KitFile {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -94,6 +102,11 @@ if (-not (Test-SbxInstalled)) {
 
 if (-not (Test-DockerInstalled)) {
     Write-Error "The 'docker' CLI was not found on PATH. Install/start Docker Desktop (or Docker Engine) first: https://docs.docker.com/get-started/get-docker/"
+    exit 1
+}
+
+if (-not (Test-DockerDaemonRunning)) {
+    Write-Error "The 'docker' CLI is installed, but the Docker daemon isn't reachable (is Docker Desktop running?). Start Docker Desktop and wait for it to finish starting, then re-run this script."
     exit 1
 }
 

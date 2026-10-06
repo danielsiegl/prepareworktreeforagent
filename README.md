@@ -65,10 +65,14 @@ passthrough. Because the clone itself provides isolation (the agent creates
 its own branch inside it), **no host git worktree is created** for this
 script.
 
-`vibe` is passed straight through like the other agents, but unlike
-`copilot`/`codex`/`claude`, `sbx` has no officially documented built-in
-template for it — `sbx run` may fail to resolve it unless you've set up a
-custom kit yourself.
+`vibe` doesn't use a `sbx`-builtin agent template (there isn't one). Instead,
+this script automatically uses the local sandbox kit built by
+`build-vibe-sbx-kit.ps1` (see below), referencing it by path, e.g.
+`sbx run --clone --name <name> .\sbx-kits\mistral-vibe <repoRoot>`. **Run
+`build-vibe-sbx-kit.ps1` once before using `-Cli vibe` / `new-cli-vibe.ps1`
+for the first time** — if the kit isn't found, the script exits with an
+error telling you to build it first, instead of trying (and failing) with a
+plain `vibe` agent name.
 
 `sbx run --clone` requires the *main* repository working directory — it
 refuses to run from a linked git worktree (e.g. one created by
@@ -161,10 +165,11 @@ Prerequisites: Docker Desktop/Engine running, `sbx` installed and signed in,
 and a [Mistral API key](https://console.mistral.ai/).
 
 > [!NOTE]
-> Wiring `new-cli-sbx.ps1`'s/`new-cli-vibe.ps1`'s `vibe` option to use this
-> kit automatically (instead of passing the plain agent name `vibe`, which
-> `sbx run` can't resolve on its own) isn't done yet — run the kit directly
-> with `sbx run .\sbx-kits\mistral-vibe ...` for now.
+> Once this kit is built, `new-cli-sbx.ps1 -Cli vibe` and `new-cli-vibe.ps1`
+> use it automatically (referencing `sbx-kits\mistral-vibe` by path instead
+> of passing the plain agent name `vibe`, which `sbx run` can't resolve on
+> its own). You can still run the kit directly with
+> `sbx run --clone .\sbx-kits\mistral-vibe ...` if you prefer.
 
 ## What `new-cli-worktree.ps1` / `new-cli-worktree.sh` do
 
