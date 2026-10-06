@@ -4,7 +4,7 @@ FROM ${BASE_IMAGE}
 
 # Pin the agent version for reproducible sandboxes.
 # Check https://pypi.org/project/mistral-vibe/ and bump as needed.
-ARG VIBE_VERSION=2.24.5
+ARG VIBE_VERSION=2.25.8
 
 # Install Vibe as the non-root agent user. The socks extra is installed
 # explicitly so the agent works through the sandbox proxy.

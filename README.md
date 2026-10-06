@@ -158,19 +158,22 @@ It:
    `sbx-kits\mistral-vibe\`.
 2. Checks `sbx template ls` to see whether `-ImageTag` is **already loaded**
    into `sbx`'s own sandbox runtime image store, and if so asks before
-   spending several minutes rebuilding it (pass `-Force` to always rebuild,
-   e.g. after bumping `-VibeVersion`). Checking only whether the kit files
-   exist on disk isn't enough — the store can be emptied independently
-   (Docker Desktop reset, `sbx template rm`, a new machine) while the kit
-   files stay behind.
+   spending several minutes rebuilding it (pass `-Force` to always rebuild).
+   Checking only whether the kit files exist on disk isn't enough — the store
+   can be emptied independently (Docker Desktop reset, `sbx template rm`, a
+   new machine) while the kit files stay behind.
 3. Builds the image **locally only** — single platform, no registry push,
-   tagged `sbx-mistral-vibe:local` by default (override with `-ImageTag`).
+   tagged `sbx-mistral-vibe:<VibeVersion>` by default, e.g.
+   `sbx-mistral-vibe:2.25.8` (override with `-ImageTag`). The tag is
+   version-qualified rather than a floating `:local` tag so that bumping
+   `-VibeVersion` always builds/loads a genuinely new image instead of
+   silently reusing a stale image cached under the same tag.
 4. Loads the built image into `sbx`'s own sandbox runtime image store via
    `docker save` + `sbx template load`. This step is required: `sbx`'s
    `sandboxd` keeps a private image store that is **not** the same as
    Docker Desktop's regular image list, so a plain `docker build` is
    otherwise invisible to `sbx run` (it fails with `403 Forbidden: pull
-   failed for image "sbx-mistral-vibe:local"`, since `sbx` tries to pull
+   failed for image "sbx-mistral-vibe:<tag>"`, since `sbx` tries to pull
    the tag from a registry that doesn't have it).
 5. Sets `sandbox.entrypoint: ["vibe", "--agent", "auto-approve"]` in the
    generated `spec.yaml`. This is required: without it, `sbx run` attaches a
