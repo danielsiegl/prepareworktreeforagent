@@ -8,7 +8,7 @@ Three versions are available:
 |---|---|
 | `new-cli-worktree.ps1` | Windows (PowerShell) |
 | `new-cli-worktree.sh` | Linux / macOS / WSL (Bash) |
-| `new-cli-worktree-sbx.ps1` | Windows (PowerShell) — runs the agent inside a [Docker Sandbox](https://docs.docker.com/ai/sandboxes/) instead of directly on the host |
+| `new-cli-sbx.ps1` | Windows (PowerShell) — runs the agent inside a [Docker Sandbox](https://docs.docker.com/ai/sandboxes/) instead of directly on the host, no host worktree needed |
 
 ## Usage
 
@@ -40,25 +40,44 @@ If `-c` is omitted, the script prompts interactively.
 - `-p <path>`: Path to the git repository to use.
 - `-c <copilot|codex|claude>`: CLI agent to start.
 
-### PowerShell with Docker Sandboxes (`new-cli-worktree-sbx.ps1`)
+### PowerShell with Docker Sandboxes (`new-cli-sbx.ps1`)
 
 ```powershell
-.\new-cli-worktree-sbx.ps1 [-repopath <path>] [-Cli <copilot|codex|claude>]
+.\new-cli-sbx.ps1 [-repopath <path>] [-Cli <copilot|codex|claude>]
 ```
 
-Same parameters as `new-cli-worktree.ps1`, but instead of launching the CLI
-agent directly on the host, it starts it inside a [Docker Sandbox](https://docs.docker.com/ai/sandboxes/)
-(`sbx`) using **clone mode**. This keeps the agent's actual working copy on
-the sandbox's own (Linux) filesystem instead of a Windows (NTFS) path, which
-avoids slow file I/O when the agent is doing lots of git operations, builds,
-or package installs. The host worktree is mounted read-only inside the
-sandbox as a reference/clone source.
+Instead of creating a git worktree on the host and launching the CLI agent
+there, this script starts it inside a [Docker Sandbox](https://docs.docker.com/ai/sandboxes/)
+(`sbx`) using **clone mode**. `sbx` mounts your repository read-only and the
+agent does its real work on a private clone that lives on the sandbox's own
+(Linux) filesystem — avoiding the slow file I/O you get when an agent
+repeatedly reads/writes a Windows (NTFS) path through a filesystem
+passthrough. Because the clone itself provides isolation (the agent creates
+its own branch inside it), **no host git worktree is created** for this
+script.
+
+`sbx run --clone` requires the *main* repository working directory — it
+refuses to run from a linked git worktree (e.g. one created by
+`new-cli-worktree.ps1`). If `-repopath` points at such a worktree, the script
+automatically resolves it to the main repository root before starting the
+sandbox.
+
+After the sandbox starts, tell the agent which branch to create, e.g.:
+
+> Create a branch `my-feature-copilot` and make the changes.
 
 If the `sbx` CLI isn't installed, the script installs it automatically via:
 
 ```powershell
 winget install -h Docker.sbx
 ```
+
+Normally a fresh `winget install` isn't visible on `PATH` until you restart
+your shell. To avoid that, the script re-reads the Machine/User `PATH` from
+the registry right after installing (and falls back to searching the
+`WindowsApps`/`WinGet` install folders for `sbx.exe`), so it can usually find
+and use `sbx` immediately in the same session. If it still can't be found,
+the script asks you to restart your shell and re-run it.
 
 You still need to run `sbx login` yourself at least once (interactive
 browser login; not automated by this script).
@@ -67,8 +86,8 @@ Because clone mode keeps the agent's changes inside the sandbox, fetch them
 back to your host once the agent is done:
 
 ```powershell
-git fetch sandbox-<branch>
-git log sandbox-<branch>/<branch>
+git fetch sandbox-<name>
+git log sandbox-<name>/<branch-name>
 ```
 
 or ask the agent to push the branch to `origin` directly from inside the
@@ -82,10 +101,13 @@ sandbox.
 4. Reuses the existing worktree if it was already created previously.
 5. Launches the selected CLI agent (`copilot`, `codex`, or `claude`) inside the new worktree directory.
 
+`new-cli-sbx.ps1` instead launches the agent inside a Docker Sandbox, with no
+host worktree step — see above.
+
 ## Requirements
 
 - Git must be installed and available on `PATH`.
-- For `new-cli-worktree-sbx.ps1`: the [Docker Sandboxes `sbx` CLI](https://docs.docker.com/ai/sandboxes/install/)
+- For `new-cli-sbx.ps1`: the [Docker Sandboxes `sbx` CLI](https://docs.docker.com/ai/sandboxes/install/)
   (auto-installed via `winget` if missing) and a one-time `sbx login`.
 - At least one of the supported CLI tools must be installed:
   - [GitHub Copilot CLI](https://githubnext.com/projects/copilot-cli) (`copilot`)
@@ -107,10 +129,10 @@ sandbox.
 ```
 
 ```powershell
-# PowerShell + Docker Sandboxes — from inside your feature branch
-.\new-cli-worktree-sbx.ps1 -Cli copilot
-# Creates branch 'my-feature-copilot', worktree '../myrepo-my-feature-copilot',
-# and runs Copilot inside a Docker Sandbox (clone mode) named 'my-feature-copilot'
+# PowerShell + Docker Sandboxes — from inside your repo
+.\new-cli-sbx.ps1 -Cli copilot
+# Starts Copilot inside a Docker Sandbox (clone mode) named '<repo>-copilot';
+# ask the agent to create its own branch, e.g. 'my-feature-copilot'
 ```
 
 ## SmartGit Integration
