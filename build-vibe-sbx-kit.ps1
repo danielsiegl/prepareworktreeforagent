@@ -250,6 +250,7 @@ if (-not $skipBuild) {
 Write-Host ""
 if (Test-MistralSecretStored) {
     Write-Host "A Mistral API key is already stored ('sbx secret ls' shows 'mistral')." -ForegroundColor Green
+    Write-Host "Get a new one at: https://chat.mistral.ai/code/extensions?focus=key" -ForegroundColor Yellow
     Write-Host -NoNewline "Replace/update it now via 'sbx secret set mistral'? (y/N): "
 }
 else {
