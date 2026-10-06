@@ -277,6 +277,7 @@ if ($Cli -eq "vibe") {
 
     if (-not (Test-MistralSecretStored)) {
         Write-Warning "No Mistral API key is stored ('sbx secret ls' has no 'mistral' entry). Vibe will fail to call the Mistral API until you run: sbx secret set mistral"
+        Write-Warning "Get a key at: https://chat.mistral.ai/code/extensions?focus=key"
     }
 }
 

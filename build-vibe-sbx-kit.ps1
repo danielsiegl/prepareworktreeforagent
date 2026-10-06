@@ -206,6 +206,7 @@ if (Test-MistralSecretStored) {
 }
 else {
     Write-Host "No Mistral API key is currently stored." -ForegroundColor Yellow
+    Write-Host "Get one at: https://chat.mistral.ai/code/extensions?focus=key" -ForegroundColor Yellow
     Write-Host -NoNewline "Store it now via 'sbx secret set mistral'? (y/N): "
 }
 $secretAnswer = Read-Host
