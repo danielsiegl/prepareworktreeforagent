@@ -33,12 +33,15 @@
 
 .PARAMETER VibeVersion
     The 'mistral-vibe' PyPI package version to pin in the Dockerfile. Defaults to
-    "2.24.5". Check https://pypi.org/project/mistral-vibe/ for newer releases.
+    "2.25.8". Check https://pypi.org/project/mistral-vibe/ for newer releases.
 
 .PARAMETER ImageTag
     The local Docker image tag to build and reference from the kit's spec.yaml.
-    Defaults to "sbx-mistral-vibe:local". No registry/namespace is used or required
-    since this is a local-only build.
+    Defaults to "sbx-mistral-vibe:<VibeVersion>" (e.g. "sbx-mistral-vibe:2.25.8"),
+    so bumping -VibeVersion always produces a distinct tag instead of silently
+    reusing/overwriting a stale image cached in sbx's template store under the
+    same tag. No registry/namespace is used or required since this is a
+    local-only build.
 
 .PARAMETER Force
     Rebuild and reload the image even if 'sbx template ls' shows it's already loaded
@@ -49,7 +52,7 @@
     .\build-vibe-sbx-kit.ps1
 
 .EXAMPLE
-    .\build-vibe-sbx-kit.ps1 -VibeVersion "2.25.0" -ImageTag "sbx-mistral-vibe:local"
+    .\build-vibe-sbx-kit.ps1 -VibeVersion "2.25.0"
 
 .NOTES
     Prerequisites: Docker Desktop/Engine running, 'sbx' installed and signed in, and a
@@ -59,8 +62,12 @@
         sbx run .\sbx-kits\mistral-vibe --name mistral-vibe --pull never .
 #>
 param(
-    [string]$VibeVersion = "2.24.5",
-    [string]$ImageTag = "sbx-mistral-vibe:local",
+    [string]$VibeVersion = "2.25.8",
+    # Defaults to a version-qualified tag (not a floating "local" tag) so that
+    # bumping -VibeVersion always builds/loads a genuinely new image instead of
+    # silently reusing a stale image cached under the same tag in sbx's
+    # template store (see Test-SbxTemplateLoaded below).
+    [string]$ImageTag = "sbx-mistral-vibe:$VibeVersion",
     [switch]$Force
 )
 

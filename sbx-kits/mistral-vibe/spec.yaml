@@ -4,7 +4,7 @@ name: mistral-vibe
 displayName: Mistral Vibe
 
 sandbox:
-  image: sbx-mistral-vibe:local
+  image: sbx-mistral-vibe:2.25.8
   entrypoint: ["vibe", "--agent", "auto-approve"]
 
 agentInstructions:
