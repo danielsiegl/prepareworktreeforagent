@@ -1,12 +1,14 @@
 <#
 .SYNOPSIS
-    Shared git-worktree helper functions used by new-cli-worktree.ps1 and start-sbx.ps1.
+    Shared helper functions used by new-cli-worktree.ps1, start-sbx.ps1, and
+    build-vibe-sbx-kit.ps1.
 
 .DESCRIPTION
     Dot-source this file to get access to Normalize-PathForComparison,
-    Get-RegisteredWorktrees, and New-Worktree-ForBranch. These functions create (or reuse)
-    a git branch/worktree in a sibling directory next to a repository root, and are kept
-    in one place so both scripts stay in sync.
+    Get-RegisteredWorktrees, and New-Worktree-ForBranch (git worktree create/reuse
+    logic shared by new-cli-worktree.ps1 and start-sbx.ps1), plus Get-SpecImageTag and
+    Test-SbxTemplateLoaded (sbx kit image-tag helpers shared by start-sbx.ps1 and
+    build-vibe-sbx-kit.ps1). Kept in one place so all scripts stay in sync.
 #>
 
 function Normalize-PathForComparison {
@@ -115,4 +117,54 @@ function New-Worktree-ForBranch {
     }
 
     return $worktreeDir
+}
+
+function Get-SpecImageTag {
+    # Extracts the 'sandbox.image:' value from an sbx kit's spec.yaml without a full
+    # YAML parser (the file has a known, simple shape). Shared by start-sbx.ps1 (to
+    # find the vibe kit's image tag before running it) and build-vibe-sbx-kit.ps1 (to
+    # derive the tag to build/load from the checked-in spec.yaml, instead of taking it
+    # as a script parameter).
+    param(
+        [Parameter(Mandatory = $true)][string]$SpecPath
+    )
+
+    if (-not (Test-Path -LiteralPath $SpecPath)) {
+        return $null
+    }
+
+    foreach ($line in Get-Content -LiteralPath $SpecPath) {
+        if ($line -match '^\s*image:\s*(\S+)\s*$') {
+            return $Matches[1]
+        }
+    }
+    return $null
+}
+
+function Test-SbxTemplateLoaded {
+    # 'sbx' keeps its own private image store (separate from Docker Desktop's regular
+    # image list) populated via 'sbx template load'. Checking only whether the kit's
+    # spec.yaml exists on disk is not enough -- the store can be emptied independently
+    # (e.g. 'sbx template rm', a Docker Desktop reset, or a fresh machine) while the kit
+    # files stay on disk, which reproduces the old "403 Forbidden: pull failed" error.
+    # 'sbx template ls' prints: REPOSITORY  TAG  IMAGE ID  FLAVOR  CREATED
+    param(
+        [Parameter(Mandatory = $true)][string]$ImageTag
+    )
+
+    $repo, $tag = $ImageTag -split ':', 2
+    if (-not $tag) { $tag = "latest" }
+
+    $lines = & sbx template ls 2>$null
+    foreach ($line in $lines) {
+        $cols = $line -split '\s+'
+        if ($cols.Count -lt 2) { continue }
+        # The store namespaces local builds under a registry-style prefix, e.g.
+        # 'docker.io/library/sbx-mistral-vibe' for a plain 'sbx-mistral-vibe' tag, so
+        # match on the repository *suffix* rather than requiring an exact string match.
+        if (($cols[0] -eq $repo -or $cols[0].EndsWith("/$repo")) -and $cols[1] -eq $tag) {
+            return $true
+        }
+    }
+    return $false
 }

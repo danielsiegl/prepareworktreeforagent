@@ -21,7 +21,6 @@ The following scripts are available:
 | `start-vibe-sbx.ps1` | Windows (PowerShell) — shortcut for `start-sbx.ps1 -Cli vibe` |
 | `build-vibe-sbx-kit.ps1` | Windows (PowerShell) — one-time setup: builds a local Docker Sandbox image/kit for Mistral Vibe, since `sbx` has no built-in template for it |
 | `worktree-lib.ps1` | Windows (PowerShell) — shared helper module (not run directly) with the git worktree create/reuse logic used by both `new-cli-worktree.ps1` and `start-sbx.ps1` (worktree mode) |
-| `sbx-kits\git-block\spec.yaml` | Docker Sandbox mixin kit (not run directly) — used automatically by `start-sbx.ps1 -Mode worktree` to disable `git` inside the sandbox without touching the host's `.git` |
 
 ## Usage
 
@@ -83,16 +82,20 @@ The script creates (or reuses) a git branch/worktree on the host named
 
 A linked worktree's `.git` is just a pointer file to the *main* repo's
 `.git\worktrees\<name>` directory on the host — a path that doesn't exist
-inside the sandbox. Without any workaround, git itself would look
-broken/uninitialized to the agent inside the container. Rather than
-touching that file on the host (which would also block *your own* git
-access to the worktree while the sandbox is running), the script adds the
-local `sbx-kits\git-block` mixin kit (`--kit sbx-kits\git-block`), which
-replaces the `git` binary **inside the sandbox only** with a stub that
-refuses to run. The agent just edits plain files; your host's `.git` is
-never touched and keeps full, uninterrupted git access to the real worktree
-the whole time — even while the sandbox session is still running. Review,
-stage, and commit the changes yourself on the host whenever you like, e.g.:
+inside the sandbox, since only the worktree directory itself is mounted
+(not the main repository). This is Docker's own documented ["Host
+worktree"](https://docs.docker.com/ai/sandboxes/workflows/git/#host-worktree)
+sandbox mode: because git can't resolve that pointer, the agent has **no git
+access** there — confirmed by testing, it fails with `fatal: not a git
+repository`. No extra kit or workaround is needed to enforce this — the
+previous `sbx-kits\git-block` mixin kit (which stubbed out the `git` binary
+inside the sandbox) has been removed since it was redundant with this
+built-in behavior. Your host's `.git` is never touched and keeps full,
+uninterrupted git access to the real worktree the whole time — even while
+the sandbox session is still running — and file edits the agent makes
+inside the sandbox show up there immediately (verified: no sync delay).
+Review, stage, and commit the changes yourself on the host whenever you
+like, e.g.:
 
 ```powershell
 git -C <worktree-path> status
@@ -112,9 +115,9 @@ Then push to `origin` with your own credentials when ready.
 > flag). It may be a future/experimental feature not yet released, or
 > specific to a different build. If a future `sbx` version ships it, it
 > could replace this script's own worktree creation (`worktree-lib.ps1`) —
-> but until then, this script manages the worktree itself and uses the
-> `git-block` kit to keep the agent from touching git, exactly as described
-> above.
+> but until then, this script manages the worktree itself and relies on
+> `sbx`'s documented host-worktree git-blocking behavior, exactly as
+> described above.
 
 `vibe` doesn't use a `sbx`-builtin agent template (there isn't one). Instead,
 this script automatically uses the local sandbox kit built by
@@ -205,34 +208,43 @@ automatic post-run `git fetch` in clone mode) is identical to
 
 ### `build-vibe-sbx-kit.ps1` — one-time setup for Mistral Vibe
 
-`sbx` has no officially built-in agent template for Mistral Vibe. This
-one-time setup script follows Docker's guide
-([Run Mistral Vibe in a Docker Sandbox](https://docs.docker.com/guides/mistral-vibe-sandbox/))
-to build your own local image and kit:
+`sbx` has no officially built-in agent template for Mistral Vibe. This repo
+ships a hand-authored kit, checked into source control, based on Docker's
+guide
+([Run Mistral Vibe in a Docker Sandbox](https://docs.docker.com/guides/mistral-vibe-sandbox/)):
+
+- `sbx-kits\mistral-vibe\Dockerfile` — installs `mistral-vibe` and the .NET
+  SDK on top of the `docker/sandbox-templates:shell` base image, pinned via
+  `ARG VIBE_VERSION` / `ARG DOTNET_VERSION` defaults. The .NET SDK is
+  installed system-wide via Microsoft's `dotnet-install.sh` script (not
+  `apt`, whose feed often lags behind the newest Ubuntu base images), so the
+  agent can build/run/test .NET projects inside the sandbox.
+- `sbx-kits\mistral-vibe\spec.yaml` — wires the image to the Mistral API
+  through the sandbox proxy, declares the sandbox's network policy, sets
+  `sandbox.entrypoint: ["vibe", "--agent", "auto-approve"]` (required —
+  without it `sbx run` attaches a plain shell instead of starting `vibe`),
+  and names the image tag to build/load in its `sandbox.image:` field.
+
+This one-time setup script only **builds** from those checked-in files — it
+does not generate or edit them:
 
 ```powershell
-.\build-vibe-sbx-kit.ps1 [-VibeVersion <version>] [-ImageTag <tag>] [-Force]
+.\build-vibe-sbx-kit.ps1 [-Force]
 ```
 
 It:
 
-1. Writes a pinned `Dockerfile` (installs `mistral-vibe` on top of the
-   `docker/sandbox-templates:shell` base image) and a kit `spec.yaml`
-   (wires the image to the Mistral API through the sandbox proxy, and
-   declares the sandbox's network policy) under
-   `sbx-kits\mistral-vibe\`.
-2. Checks `sbx template ls` to see whether `-ImageTag` is **already loaded**
+1. Reads the image tag to build from `spec.yaml`'s `sandbox.image:` field
+   (e.g. `sbx-mistral-vibe:2.25.8-dotnet10.0`), so the Dockerfile and
+   spec.yaml stay the single source of truth for versions — no script
+   parameters to keep in sync with them.
+2. Checks `sbx template ls` to see whether that tag is **already loaded**
    into `sbx`'s own sandbox runtime image store, and if so asks before
    spending several minutes rebuilding it (pass `-Force` to always rebuild).
    Checking only whether the kit files exist on disk isn't enough — the store
    can be emptied independently (Docker Desktop reset, `sbx template rm`, a
    new machine) while the kit files stay behind.
-3. Builds the image **locally only** — single platform, no registry push,
-   tagged `sbx-mistral-vibe:<VibeVersion>` by default, e.g.
-   `sbx-mistral-vibe:2.25.8` (override with `-ImageTag`). The tag is
-   version-qualified rather than a floating `:local` tag so that bumping
-   `-VibeVersion` always builds/loads a genuinely new image instead of
-   silently reusing a stale image cached under the same tag.
+3. Builds the image **locally only** — single platform, no registry push.
 4. Loads the built image into `sbx`'s own sandbox runtime image store via
    `docker save` + `sbx template load`. This step is required: `sbx`'s
    `sandboxd` keeps a private image store that is **not** the same as
@@ -240,14 +252,19 @@ It:
    otherwise invisible to `sbx run` (it fails with `403 Forbidden: pull
    failed for image "sbx-mistral-vibe:<tag>"`, since `sbx` tries to pull
    the tag from a registry that doesn't have it).
-5. Sets `sandbox.entrypoint: ["vibe", "--agent", "auto-approve"]` in the
-   generated `spec.yaml`. This is required: without it, `sbx run` attaches a
-   plain shell instead of starting `vibe` (the Docker image's own `CMD` is
-   not enough — `sbx` needs the kit's `entrypoint` field to know what to
-   launch as the interactive agent session).
-6. Checks `sbx secret ls` and tells you whether a Mistral API key is
+5. Checks `sbx secret ls` and tells you whether a Mistral API key is
    already stored before asking whether to run `sbx secret set mistral` —
    so the sandbox proxy can inject your key without it ever entering the VM.
+
+> [!NOTE]
+> **Bumping versions** (a new `mistral-vibe` release, a new .NET SDK
+> version, or any other change to the image): hand-edit
+> `sbx-kits\mistral-vibe\Dockerfile`'s `ARG` defaults, and update the
+> matching `image:` tag in `sbx-kits\mistral-vibe\spec.yaml` to a new value
+> (so a stale image cached under the old tag is never silently reused).
+> Then run `.\build-vibe-sbx-kit.ps1 -Force`. These files are checked into
+> git as plain, lintable Dockerfile/YAML — no PowerShell string-escaping
+> involved.
 
 It does **not** run `sbx kit validate` or `sbx run` automatically — it
 prints the exact commands to run yourself once you're ready:
@@ -271,8 +288,8 @@ and a [Mistral API key](https://chat.mistral.ai/code/extensions?focus=key).
 > `sbx-kits\mistral-vibe` by path, with `--pull never`, instead of passing
 > the plain agent name `vibe`, which `sbx run` can't resolve on its own).
 > You can still run this script manually to rebuild the kit (e.g. after
-> bumping `-VibeVersion`), or run the kit directly with
-> `sbx run --clone --pull never .\sbx-kits\mistral-vibe ...`.
+> hand-editing the Dockerfile/spec.yaml to bump a version), or run the kit
+> directly with `sbx run --clone --pull never .\sbx-kits\mistral-vibe ...`.
 
 ## What `new-cli-worktree.ps1` / `new-cli-worktree.sh` do
 
@@ -339,7 +356,7 @@ mounting that worktree into the sandbox without `--clone`.
 ```powershell
 # One-time setup: build a local sbx image/kit for Mistral Vibe
 .\build-vibe-sbx-kit.ps1
-# Writes sbx-kits\mistral-vibe\{Dockerfile,spec.yaml} and builds the image locally
+# Builds + loads the image from the checked-in sbx-kits\mistral-vibe\{Dockerfile,spec.yaml}
 ```
 
 ## SmartGit Integration
