@@ -1,21 +1,27 @@
 <#
 .SYNOPSIS
     Launches a CLI agent (copilot, codex, claude, or vibe) inside a Docker Sandbox (sbx)
-    using clone mode for isolation and good performance.
+    using either clone mode or worktree mode.
 
 .DESCRIPTION
     Given a repository path and a CLI agent name, this script starts the selected CLI
-    agent inside a Docker Sandbox (`sbx`) in clone mode. In clone mode, `sbx` mounts
-    your repository read-only and the agent does its real work on a private clone that
-    lives on the sandbox's own (Linux) filesystem. This avoids the slow file I/O that
-    occurs when an agent/container repeatedly reads and writes a Windows (NTFS) path
-    through a filesystem passthrough, and it gives the agent its own isolated branch/
-    worktree inside the sandbox clone — so no git worktree needs to be created on the
-    host.
+    agent inside a Docker Sandbox (`sbx`), using one of two mount modes:
 
-    `sbx --clone` requires the *main* repository working directory (not a linked git
-    worktree). If `-repopath` points at a linked worktree, the script automatically
-    resolves it to the main repository root.
+    - `clone` (default-offered, isolation/performance focused): `sbx` mounts your
+      repository read-only and the agent does its real work on a private clone that
+      lives on the sandbox's own (Linux) filesystem. This avoids the slow file I/O that
+      occurs when an agent/container repeatedly reads and writes a Windows (NTFS) path
+      through a filesystem passthrough, and it gives the agent its own isolated branch/
+      worktree inside the sandbox clone — so no git worktree needs to be created on the
+      host. `sbx --clone` requires the *main* repository working directory (not a linked
+      git worktree). If `-repopath` points at a linked worktree, the script automatically
+      resolves it to the main repository root.
+
+    - `worktree` (host worktree, like new-cli-worktree.ps1): the script creates (or
+      reuses) a git branch/worktree on the host named `<current-branch>-<cli>` in a
+      sibling directory, then runs `sbx run` *without* `--clone`, mounting that worktree
+      directory directly. The agent's commits land directly on the host worktree's
+      branch, so no post-session `git fetch` step is needed.
 
     If the `sbx` CLI is not installed, the script attempts to install it via winget
     (`winget install -h Docker.sbx`).
@@ -30,28 +36,43 @@
     local sandbox kit built by `build-vibe-sbx-kit.ps1`. If that kit's image isn't found
     yet, this script builds it automatically before continuing.
 
+.PARAMETER Mode
+    How the repository is made available to the sandbox. Valid values: clone, worktree.
+    - clone: isolated in-sandbox clone (default sbx behavior); no host worktree created.
+    - worktree: creates/reuses a host git worktree (like new-cli-worktree.ps1) and mounts
+      it directly, without `--clone`.
+    If omitted, the script prompts interactively.
+
 .EXAMPLE
-    .\start-sbx.ps1 -repopath "C:\repos\myrepo" -Cli copilot
+    .\start-sbx.ps1 -repopath "C:\repos\myrepo" -Cli copilot -Mode clone
+
+.EXAMPLE
+    .\start-sbx.ps1 -Cli copilot -Mode worktree
 
 .EXAMPLE
     .\start-sbx.ps1
-    # Prompts interactively for CLI agent selection.
+    # Prompts interactively for CLI agent and mode selection.
 
 .NOTES
-    Once the sandbox starts, ask the agent to create a branch before it starts editing,
-    e.g. "Create a branch <branch-name> and make the changes." The agent CANNOT fetch or
-    pull its own changes back to the host: your host repo is mounted read-only inside the
-    sandbox, so running git fetch/pull from inside the agent session fails. This script
-    runs 'git fetch sandbox-<name>' on the host automatically once the sandbox session
-    ends, and lists the branches it fetched. After that, check out/merge the branch and
-    push to origin with your own credentials. (The agent can also push directly to origin
-    itself if you give it push access/credentials, since that goes out over the network
-    rather than through the read-only host mount.)
+    In clone mode, once the sandbox starts, ask the agent to create a branch before it
+    starts editing, e.g. "Create a branch <branch-name> and make the changes." The agent
+    CANNOT fetch or pull its own changes back to the host: your host repo is mounted
+    read-only inside the sandbox, so running git fetch/pull from inside the agent session
+    fails. This script runs 'git fetch sandbox-<name>' on the host automatically once the
+    sandbox session ends, and lists the branches it fetched. After that, check out/merge
+    the branch and push to origin with your own credentials. (The agent can also push
+    directly to origin itself if you give it push access/credentials, since that goes out
+    over the network rather than through the read-only host mount.)
+
+    In worktree mode, the host worktree/branch is created before the sandbox starts, and
+    the agent's commits land directly on it — no post-session fetch step is needed.
 #>
 param(
     [string]$repopath,
     [ValidateSet("copilot", "codex", "claude", "vibe")]
-    [string]$Cli
+    [string]$Cli,
+    [ValidateSet("clone", "worktree")]
+    [string]$Mode
 )
 
 function Show-Rabbit {
@@ -100,6 +121,26 @@ function Read-CliChoice {
             '3' { return $options[2] }
             '4' { return $options[3] }
             default { Write-Host "Please press 1, 2, 3, or 4." -ForegroundColor Yellow }
+        }
+    }
+}
+
+function Read-ModeChoice {
+    Write-Host ""
+    Write-Host "Select sandbox mode:" -ForegroundColor Cyan
+    Write-Host "  1) clone    - isolated in-sandbox clone (no host worktree, fast)"
+    Write-Host "  2) worktree - mount a host git worktree (like new-cli-worktree.ps1)"
+    Write-Host ""
+
+    while ($true) {
+        Write-Host -NoNewline "Enter 1 or 2: "
+        $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+        Write-Host $key.Character
+
+        switch ($key.Character) {
+            '1' { return "clone" }
+            '2' { return "worktree" }
+            default { Write-Host "Please press 1 or 2." -ForegroundColor Yellow }
         }
     }
 }
@@ -266,6 +307,10 @@ function Get-MainRepoRoot {
     return (Split-Path -Path $commonGitDir -Parent)
 }
 
+# Shared with new-cli-worktree.ps1: Normalize-PathForComparison, Get-RegisteredWorktrees,
+# and New-Worktree-ForBranch (used below for worktree mode).
+. (Join-Path -Path $PSScriptRoot -ChildPath "worktree-lib.ps1")
+
 if ([string]::IsNullOrWhiteSpace($repopath)) {
     $repopath = (Get-Location).Path
 }
@@ -276,6 +321,10 @@ Set-Location $repopath
 
 if (-not $Cli) {
     $Cli = Read-CliChoice
+}
+
+if (-not $Mode) {
+    $Mode = Read-ModeChoice
 }
 
 if (-not (Install-SbxIfMissing)) {
@@ -300,6 +349,17 @@ if ($currentBranch -eq "HEAD") {
 $repoName = Split-Path -Path $repoRoot -Leaf
 $suggestedBranch = "$currentBranch-$Cli"
 $sandboxName = ("$repoName-$Cli" -replace '[^a-zA-Z0-9_.-]', '-')
+
+$mountPath = $repoRoot
+$cloneArgs = @("--clone")
+if ($Mode -eq "worktree") {
+    $worktreeDir = New-Worktree-ForBranch -RepoRoot $repoRoot -CurrentBranch $currentBranch -NewBranch $suggestedBranch
+    if (-not $worktreeDir) {
+        exit 1
+    }
+    $mountPath = $worktreeDir
+    $cloneArgs = @()
+}
 
 $agentArg = $Cli
 $pullArgs = @()
@@ -347,43 +407,60 @@ if ($Cli -eq "vibe") {
 
 Write-Host "Repository : $repoRoot"
 Write-Host "Sandbox    : $sandboxName"
+Write-Host "Mode       : $Mode"
 
-Write-Host "Starting '$Cli' in Docker Sandbox (clone mode) '$sandboxName' for repo '$repoRoot'..."
-Write-Host "Note: the agent works on a private in-sandbox clone, isolated from your host repo checkout." -ForegroundColor Cyan
-Write-Host "Ask the agent to create a branch before editing, e.g.:" -ForegroundColor Cyan
-Write-Host "      Create a branch '$suggestedBranch' and make the changes." -ForegroundColor Cyan
-Write-Host "IMPORTANT: the agent cannot fetch/pull its own changes back to this host." -ForegroundColor Yellow
-Write-Host "Your host repo is mounted read-only inside the sandbox (/run/sandbox/source)," -ForegroundColor Yellow
-Write-Host "so 'git fetch'/'git pull' will fail if the agent runs them itself. This script" -ForegroundColor Yellow
-Write-Host "will automatically run 'git fetch' from the host once the sandbox session ends." -ForegroundColor Yellow
-
-& sbx run --clone --name $sandboxName @pullArgs $agentArg $repoRoot
-$sbxExitCode = $LASTEXITCODE
-
-Write-Host ""
-Write-Host "Sandbox session ended. Fetching the agent's work into this host repo..." -ForegroundColor Cyan
-
-$sandboxRemote = "sandbox-$sandboxName"
-& git -C $repoRoot fetch $sandboxRemote 2>&1 | ForEach-Object { Write-Host "  $_" }
-$fetchExitCode = $LASTEXITCODE
-
-if ($fetchExitCode -eq 0) {
-    Write-Host "Fetched '$sandboxRemote'. Branches available from the sandbox:" -ForegroundColor Green
-    $remoteBranches = & git -C $repoRoot branch -r --list "$sandboxRemote/*"
-    if ($remoteBranches) {
-        $remoteBranches | ForEach-Object { Write-Host "  $($_.Trim())" }
-        Write-Host "Check out a branch on the host with, e.g.:" -ForegroundColor Cyan
-        Write-Host "      git -C `"$repoRoot`" checkout -b <branch-name> $sandboxRemote/<branch-name>" -ForegroundColor Cyan
-        Write-Host "Then push to origin with your own credentials." -ForegroundColor Cyan
-    }
-    else {
-        Write-Warning "No branches found under '$sandboxRemote/'. Did the agent create/commit a branch before the session ended?"
-    }
+if ($Mode -eq "worktree") {
+    Write-Host "Starting '$Cli' in Docker Sandbox (worktree mode) '$sandboxName', mounting worktree '$mountPath'..."
+    Write-Host "Note: the agent works directly on the host worktree/branch '$suggestedBranch' - no '--clone' is used." -ForegroundColor Cyan
+    Write-Host "Since the worktree is mounted directly (not read-only), the agent's commits land" -ForegroundColor Cyan
+    Write-Host "directly on this branch - no post-session 'git fetch' step is needed." -ForegroundColor Cyan
 }
 else {
-    Write-Warning "Automatic 'git fetch $sandboxRemote' failed (exit code $fetchExitCode). The sandbox may have already stopped/been removed."
-    Write-Warning "If the sandbox is still running, fetch manually from the host with:"
-    Write-Warning "      git fetch $sandboxRemote"
+    Write-Host "Starting '$Cli' in Docker Sandbox (clone mode) '$sandboxName' for repo '$repoRoot'..."
+    Write-Host "Note: the agent works on a private in-sandbox clone, isolated from your host repo checkout." -ForegroundColor Cyan
+    Write-Host "Ask the agent to create a branch before editing, e.g.:" -ForegroundColor Cyan
+    Write-Host "      Create a branch '$suggestedBranch' and make the changes." -ForegroundColor Cyan
+    Write-Host "IMPORTANT: the agent cannot fetch/pull its own changes back to this host." -ForegroundColor Yellow
+    Write-Host "Your host repo is mounted read-only inside the sandbox (/run/sandbox/source)," -ForegroundColor Yellow
+    Write-Host "so 'git fetch'/'git pull' will fail if the agent runs them itself. This script" -ForegroundColor Yellow
+    Write-Host "will automatically run 'git fetch' from the host once the sandbox session ends." -ForegroundColor Yellow
+}
+
+& sbx run @cloneArgs --name $sandboxName @pullArgs $agentArg $mountPath
+$sbxExitCode = $LASTEXITCODE
+
+if ($Mode -eq "worktree") {
+    Write-Host ""
+    Write-Host "Sandbox session ended. The agent's commits are already on the host worktree:" -ForegroundColor Cyan
+    Write-Host "      $mountPath (branch '$suggestedBranch')" -ForegroundColor Cyan
+    Write-Host "Push to origin with your own credentials when ready." -ForegroundColor Cyan
+}
+else {
+    Write-Host ""
+    Write-Host "Sandbox session ended. Fetching the agent's work into this host repo..." -ForegroundColor Cyan
+
+    $sandboxRemote = "sandbox-$sandboxName"
+    & git -C $repoRoot fetch $sandboxRemote 2>&1 | ForEach-Object { Write-Host "  $_" }
+    $fetchExitCode = $LASTEXITCODE
+
+    if ($fetchExitCode -eq 0) {
+        Write-Host "Fetched '$sandboxRemote'. Branches available from the sandbox:" -ForegroundColor Green
+        $remoteBranches = & git -C $repoRoot branch -r --list "$sandboxRemote/*"
+        if ($remoteBranches) {
+            $remoteBranches | ForEach-Object { Write-Host "  $($_.Trim())" }
+            Write-Host "Check out a branch on the host with, e.g.:" -ForegroundColor Cyan
+            Write-Host "      git -C `"$repoRoot`" checkout -b <branch-name> $sandboxRemote/<branch-name>" -ForegroundColor Cyan
+            Write-Host "Then push to origin with your own credentials." -ForegroundColor Cyan
+        }
+        else {
+            Write-Warning "No branches found under '$sandboxRemote/'. Did the agent create/commit a branch before the session ended?"
+        }
+    }
+    else {
+        Write-Warning "Automatic 'git fetch $sandboxRemote' failed (exit code $fetchExitCode). The sandbox may have already stopped/been removed."
+        Write-Warning "If the sandbox is still running, fetch manually from the host with:"
+        Write-Warning "      git fetch $sandboxRemote"
+    }
 }
 
 if ($sbxExitCode -ne 0) {
