@@ -6,8 +6,10 @@ Scripts that prepare an isolated environment for an AI coding agent (GitHub
 Copilot, OpenAI Codex, Anthropic Claude, or Mistral Vibe). The `worktree`
 scripts create a new branch on top of your current feature branch and check
 it out as a separate git worktree, then launch the chosen CLI agent inside
-that directory. `start-sbx.ps1` instead launches the agent inside an
-isolated Docker Sandbox and creates no git worktree at all — see below.
+that directory. `start-sbx.ps1` instead launches the agent inside a Docker
+Sandbox, and supports two modes: an isolated **clone** mode (no host
+worktree) or a **worktree** mode (mounts a host git worktree, like the
+`worktree` scripts) — see below.
 
 The following scripts are available:
 
@@ -15,9 +17,10 @@ The following scripts are available:
 |---|---|
 | `new-cli-worktree.ps1` | Windows (PowerShell) |
 | `new-cli-worktree.sh` | Linux / macOS / WSL (Bash) |
-| `start-sbx.ps1` | Windows (PowerShell) — runs the agent inside a [Docker Sandbox](https://docs.docker.com/ai/sandboxes/) instead of directly on the host, no host worktree needed |
+| `start-sbx.ps1` | Windows (PowerShell) — runs the agent inside a [Docker Sandbox](https://docs.docker.com/ai/sandboxes/), in either clone mode (no host worktree) or worktree mode (mounts a host git worktree) |
 | `start-vibe-sbx.ps1` | Windows (PowerShell) — shortcut for `start-sbx.ps1 -Cli vibe` |
 | `build-vibe-sbx-kit.ps1` | Windows (PowerShell) — one-time setup: builds a local Docker Sandbox image/kit for Mistral Vibe, since `sbx` has no built-in template for it |
+| `worktree-lib.ps1` | Windows (PowerShell) — shared helper module (not run directly) with the git worktree create/reuse logic used by both `new-cli-worktree.ps1` and `start-sbx.ps1` (worktree mode) |
 
 ## Usage
 
@@ -54,18 +57,31 @@ CLIs that are not installed are marked as unavailable and cannot be selected.
 ### PowerShell with Docker Sandboxes (`start-sbx.ps1`)
 
 ```powershell
-.\start-sbx.ps1 [-repopath <path>] [-Cli <copilot|codex|claude|vibe>]
+.\start-sbx.ps1 [-repopath <path>] [-Cli <copilot|codex|claude|vibe>] [-Mode <clone|worktree>]
 ```
 
-Instead of creating a git worktree on the host and launching the CLI agent
-there, this script starts it inside a [Docker Sandbox](https://docs.docker.com/ai/sandboxes/)
-(`sbx`) using **clone mode**. `sbx` mounts your repository read-only and the
-agent does its real work on a private clone that lives on the sandbox's own
-(Linux) filesystem — avoiding the slow file I/O you get when an agent
-repeatedly reads/writes a Windows (NTFS) path through a filesystem
-passthrough. Because the clone itself provides isolation (the agent creates
-its own branch inside it), **no host git worktree is created** for this
-script.
+Starts the CLI agent inside a [Docker Sandbox](https://docs.docker.com/ai/sandboxes/)
+(`sbx`), using one of two mount modes. If `-Mode` is omitted, the script
+prompts interactively (like it does for `-Cli`).
+
+#### `-Mode clone` (isolated in-sandbox clone)
+
+`sbx` mounts your repository read-only and the agent does its real work on a
+private clone that lives on the sandbox's own (Linux) filesystem —
+avoiding the slow file I/O you get when an agent repeatedly reads/writes a
+Windows (NTFS) path through a filesystem passthrough. Because the clone
+itself provides isolation (the agent creates its own branch inside it),
+**no host git worktree is created** for this mode.
+
+#### `-Mode worktree` (host git worktree)
+
+The script creates (or reuses) a git branch/worktree on the host named
+`<current-branch>-<cli>` in a sibling directory — the same logic
+`new-cli-worktree.ps1` uses (shared via `worktree-lib.ps1`) — then runs
+`sbx run` **without** `--clone`, mounting that worktree directory directly.
+The agent's commits land straight on the host worktree's branch, so there's
+no post-session `git fetch` step: just push from the host worktree directly
+when you're ready.
 
 `vibe` doesn't use a `sbx`-builtin agent template (there isn't one). Instead,
 this script automatically uses the local sandbox kit built by
@@ -86,11 +102,16 @@ re-run `build-vibe-sbx-kit.ps1`.
 refuses to run from a linked git worktree (e.g. one created by
 `new-cli-worktree.ps1`). If `-repopath` points at such a worktree, the script
 automatically resolves it to the main repository root before starting the
-sandbox.
+sandbox (this resolution applies to both modes — `worktree` mode's own
+branch/worktree is created from that resolved main repo root).
 
-After the sandbox starts, tell the agent which branch to create, e.g.:
+In `clone` mode, after the sandbox starts, tell the agent which branch to
+create, e.g.:
 
 > Create a branch `my-feature-copilot` and make the changes.
+
+In `worktree` mode, the branch/worktree is already created and checked out
+before the agent starts, so no such instruction is needed.
 
 If the `sbx` CLI isn't installed, the script installs it automatically via:
 
@@ -109,10 +130,10 @@ You still need to run `sbx login` yourself at least once (interactive
 browser login; not automated by this script).
 
 > [!IMPORTANT]
-> The agent **cannot** fetch or pull its own changes back to your host. Your
-> host repo is mounted **read-only** inside the sandbox (at
-> `/run/sandbox/source`), so running `git fetch`/`git pull` from inside the
-> agent session fails with something like
+> This applies to **`clone` mode only**. The agent **cannot** fetch or pull
+> its own changes back to your host. Your host repo is mounted **read-only**
+> inside the sandbox (at `/run/sandbox/source`), so running `git
+> fetch`/`git pull` from inside the agent session fails with something like
 > `error: cannot open '.git/FETCH_HEAD': Read-only file system`. Don't ask
 > the agent to run these — the script handles it for you instead: once the
 > sandbox session ends, it automatically runs `git fetch sandbox-<name>` on
@@ -126,17 +147,24 @@ browser login; not automated by this script).
 > agent push access so it can push the branch to `origin` directly from
 > inside the sandbox (that goes out over the network, not through the
 > read-only host mount, so it works).
+>
+> In **`worktree` mode**, the worktree directory is mounted directly (not
+> read-only), so the agent's commits land straight on that branch — no
+> post-session fetch step is needed. Push to `origin` from the host worktree
+> yourself when ready.
 
 ### `start-vibe-sbx.ps1` — shortcut for Mistral Vibe
 
 ```powershell
-.\start-vibe-sbx.ps1 [-repopath <path>]
+.\start-vibe-sbx.ps1 [-repopath <path>] [-Mode <clone|worktree>]
 ```
 
 Thin wrapper that calls `start-sbx.ps1 -Cli vibe` for you, so you don't
-need to pass `-Cli vibe` or answer the interactive CLI-agent menu. Everything
-else (sbx auto-install, clone-mode launch, automatic post-run `git fetch`) is
-identical to `start-sbx.ps1` — see above.
+need to pass `-Cli vibe` or answer the interactive CLI-agent menu. `-Mode`
+is forwarded to `start-sbx.ps1` as-is (and, like there, prompts interactively
+if omitted). Everything else (sbx auto-install, clone/worktree mode launch,
+automatic post-run `git fetch` in clone mode) is identical to
+`start-sbx.ps1` — see above.
 
 ### `build-vibe-sbx-kit.ps1` — one-time setup for Mistral Vibe
 
@@ -217,8 +245,12 @@ and a [Mistral API key](https://chat.mistral.ai/code/extensions?focus=key).
 4. Reuses the existing worktree if it was already created previously.
 5. Launches the selected CLI agent (`copilot`, `codex`, `claude`, or `vibe`) inside the new worktree directory.
 
-`start-sbx.ps1` instead launches the agent inside a Docker Sandbox, with no
-host worktree step — see above.
+`start-sbx.ps1` instead launches the agent inside a Docker Sandbox. In
+`clone` mode (the isolation/performance-focused default it offers), no host
+worktree step happens — see above. In `worktree` mode, it performs steps 1–4
+above itself (via the shared `worktree-lib.ps1` module — the same git
+branch/worktree create-or-reuse logic as `new-cli-worktree.ps1`) before
+mounting that worktree into the sandbox without `--clone`.
 
 ## Requirements
 
@@ -249,15 +281,22 @@ host worktree step — see above.
 
 ```powershell
 # PowerShell + Docker Sandboxes — from inside your repo
-.\start-sbx.ps1 -Cli copilot
+.\start-sbx.ps1 -Cli copilot -Mode clone
 # Starts Copilot inside a Docker Sandbox (clone mode) named '<repo>-copilot';
 # ask the agent to create its own branch, e.g. 'my-feature-copilot'
 ```
 
 ```powershell
+# PowerShell + Docker Sandboxes — worktree mode
+.\start-sbx.ps1 -Cli copilot -Mode worktree
+# Creates/reuses branch 'my-feature-copilot' + worktree ../myrepo-my-feature-copilot
+# on the host, then mounts it into the sandbox (no --clone, no post-run fetch needed)
+```
+
+```powershell
 # PowerShell + Docker Sandboxes — Mistral Vibe shortcut
 .\start-vibe-sbx.ps1
-# Same as '.\start-sbx.ps1 -Cli vibe', no CLI-agent prompt
+# Same as '.\start-sbx.ps1 -Cli vibe', no CLI-agent prompt; prompts for -Mode if omitted
 ```
 
 ```powershell

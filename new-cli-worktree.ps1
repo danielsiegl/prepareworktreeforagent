@@ -130,100 +130,14 @@ if ($currentBranch -eq "HEAD") {
 }
 
 $newBranch = "$currentBranch-$Cli"
-$parentDir = Split-Path -Path $repoRoot -Parent
-$repoName = Split-Path -Path $repoRoot -Leaf
-$worktreeDir = Join-Path -Path $parentDir -ChildPath "$repoName-$newBranch"
 
-function Normalize-PathForComparison {
-    param([Parameter(Mandatory = $true)][string]$Path)
-    return ([System.IO.Path]::GetFullPath($Path)).TrimEnd('\\').ToLowerInvariant()
-}
+# Shared with start-sbx.ps1: Normalize-PathForComparison, Get-RegisteredWorktrees,
+# and New-Worktree-ForBranch.
+. (Join-Path -Path $PSScriptRoot -ChildPath "worktree-lib.ps1")
 
-function Get-RegisteredWorktrees {
-    param([Parameter(Mandatory = $true)][string]$RepoRoot)
-
-    $porcelain = & git -C $RepoRoot worktree list --porcelain 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        return @()
-    }
-
-    $entries = @()
-    $current = $null
-    foreach ($line in $porcelain) {
-        if ($line.StartsWith("worktree ")) {
-            if ($null -ne $current) {
-                $entries += [pscustomobject]$current
-            }
-            $current = @{
-                Path = $line.Substring(9).Trim()
-                Branch = $null
-            }
-            continue
-        }
-
-        if ($null -ne $current -and $line.StartsWith("branch ")) {
-            $current.Branch = $line.Substring(7).Trim()
-            continue
-        }
-
-        if ([string]::IsNullOrWhiteSpace($line) -and $null -ne $current) {
-            $entries += [pscustomobject]$current
-            $current = $null
-        }
-    }
-
-    if ($null -ne $current) {
-        $entries += [pscustomobject]$current
-    }
-
-    return $entries
-}
-
-$registeredWorktrees = Get-RegisteredWorktrees -RepoRoot $repoRoot
-$branchRef = "refs/heads/$newBranch"
-$normalizedTarget = Normalize-PathForComparison -Path $worktreeDir
-
-$existingWorktreeByPath = $registeredWorktrees |
-    Where-Object { (Normalize-PathForComparison -Path $_.Path) -eq $normalizedTarget } |
-    Select-Object -First 1
-
-$existingWorktreeByBranch = $registeredWorktrees |
-    Where-Object { $_.Branch -eq $branchRef } |
-    Select-Object -First 1
-
-$worktreeToUse = $null
-
-if ($existingWorktreeByPath) {
-    $worktreeToUse = $existingWorktreeByPath.Path
-    Write-Host "Reusing existing worktree at '$worktreeToUse'."
-}
-elseif (Test-Path -LiteralPath $worktreeDir) {
-    Write-Error "Target directory exists but is not a registered git worktree: $worktreeDir"
+$worktreeToUse = New-Worktree-ForBranch -RepoRoot $repoRoot -CurrentBranch $currentBranch -NewBranch $newBranch
+if (-not $worktreeToUse) {
     exit 1
-}
-elseif ($existingWorktreeByBranch) {
-    $worktreeToUse = $existingWorktreeByBranch.Path
-    Write-Host "Reusing existing worktree for '$newBranch' at '$worktreeToUse'."
-}
-else {
-    & git -C $repoRoot show-ref --verify --quiet "refs/heads/$newBranch"
-    $branchExists = ($LASTEXITCODE -eq 0)
-
-    if ($branchExists) {
-        Write-Host "Branch exists, creating worktree on '$newBranch' at '$worktreeDir'."
-        & git -C $repoRoot worktree add "$worktreeDir" "$newBranch"
-    }
-    else {
-        Write-Host "Creating branch '$newBranch' from '$currentBranch' and adding worktree at '$worktreeDir'."
-        & git -C $repoRoot worktree add -b "$newBranch" "$worktreeDir" "$currentBranch"
-    }
-
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to create worktree."
-        exit 1
-    }
-
-    $worktreeToUse = $worktreeDir
 }
 
 Write-Host "Done."
