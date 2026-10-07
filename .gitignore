@@ -1,4 +1,4 @@
 /sbx-kits/*
-# git-block is static, authored source (ships with the repo for -Mode worktree),
+# mistral-vibe is static, authored/checked-in source (Dockerfile + spec.yaml),
 # unlike the other sbx-kits entries which are generated build artifacts.
-!/sbx-kits/git-block/
+!/sbx-kits/mistral-vibe/

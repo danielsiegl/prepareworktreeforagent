@@ -1,22 +1,28 @@
 <#
 .SYNOPSIS
-    Builds a local Docker Sandbox (sbx) image and kit for Mistral Vibe.
+    Builds the local Docker Sandbox (sbx) image for Mistral Vibe from its checked-in kit.
 
 .DESCRIPTION
     'sbx' has no officially built-in agent template for Mistral Vibe (unlike
-    copilot/codex/claude). This script follows Docker's guide
-    (https://docs.docker.com/guides/mistral-vibe-sandbox/) to build your own:
+    copilot/codex/claude). This repo ships a hand-authored kit under
+    'sbx-kits\mistral-vibe\' (based on Docker's guide,
+    https://docs.docker.com/guides/mistral-vibe-sandbox/):
 
-      1. Writes a pinned Dockerfile (installs 'mistral-vibe' on top of the
-         'docker/sandbox-templates:shell' base image) and a kit 'spec.yaml'
-         (wires the image to the Mistral API through the sandbox proxy, and
-         declares the sandbox's network policy) under:
+        sbx-kits\mistral-vibe\Dockerfile   installs 'mistral-vibe' and the .NET SDK
+                                           on top of the 'docker/sandbox-templates:shell'
+                                           base image, pinned via ARG defaults.
+        sbx-kits\mistral-vibe\spec.yaml    wires the image to the Mistral API through
+                                           the sandbox proxy, declares the sandbox's
+                                           network policy, and names the image tag to
+                                           build/load (the 'sandbox.image:' field).
 
-             sbx-kits\mistral-vibe\Dockerfile
-             sbx-kits\mistral-vibe\spec.yaml
+    This script does NOT generate those files -- it only builds from them:
 
-      2. Builds the image locally (single platform, no registry push) and
-         tags it with -ImageTag.
+      1. Reads the image tag to build from 'spec.yaml' (via the shared
+         Get-SpecImageTag helper in worktree-lib.ps1), so the Dockerfile and
+         spec.yaml stay the single source of truth for versions.
+
+      2. Builds the image locally (single platform, no registry push) with that tag.
 
       3. Loads the built image into sbx's own sandbox runtime image store via
          'docker save' + 'sbx template load'. This step is required: sbx's
@@ -31,17 +37,11 @@
     It does NOT run 'sbx kit validate' or 'sbx run' automatically -- it prints
     the exact commands for you to run yourself once you're ready.
 
-.PARAMETER VibeVersion
-    The 'mistral-vibe' PyPI package version to pin in the Dockerfile. Defaults to
-    "2.25.8". Check https://pypi.org/project/mistral-vibe/ for newer releases.
-
-.PARAMETER ImageTag
-    The local Docker image tag to build and reference from the kit's spec.yaml.
-    Defaults to "sbx-mistral-vibe:<VibeVersion>" (e.g. "sbx-mistral-vibe:2.25.8"),
-    so bumping -VibeVersion always produces a distinct tag instead of silently
-    reusing/overwriting a stale image cached in sbx's template store under the
-    same tag. No registry/namespace is used or required since this is a
-    local-only build.
+    To bump the 'mistral-vibe' package version, the .NET SDK version, or any other
+    part of the image: edit 'sbx-kits\mistral-vibe\Dockerfile' directly (its ARG
+    defaults), and update the matching 'image:' tag in 'spec.yaml' to a new value
+    (so a stale cached image under the old tag is never silently reused) -- then
+    run this script with -Force.
 
 .PARAMETER Force
     Rebuild and reload the image even if 'sbx template ls' shows it's already loaded
@@ -52,7 +52,9 @@
     .\build-vibe-sbx-kit.ps1
 
 .EXAMPLE
-    .\build-vibe-sbx-kit.ps1 -VibeVersion "2.25.0"
+    .\build-vibe-sbx-kit.ps1 -Force
+    # Forces a rebuild, e.g. after hand-editing the Dockerfile/spec.yaml to bump a
+    # version.
 
 .NOTES
     Prerequisites: Docker Desktop/Engine running, 'sbx' installed and signed in, and a
@@ -62,14 +64,10 @@
         sbx run .\sbx-kits\mistral-vibe --name mistral-vibe --pull never .
 #>
 param(
-    [string]$VibeVersion = "2.25.8",
-    # Defaults to a version-qualified tag (not a floating "local" tag) so that
-    # bumping -VibeVersion always builds/loads a genuinely new image instead of
-    # silently reusing a stale image cached under the same tag in sbx's
-    # template store (see Test-SbxTemplateLoaded below).
-    [string]$ImageTag = "sbx-mistral-vibe:$VibeVersion",
     [switch]$Force
 )
+
+. (Join-Path -Path $PSScriptRoot -ChildPath "worktree-lib.ps1")
 
 function Test-SbxInstalled {
     return [bool](Get-Command -Name "sbx" -ErrorAction SilentlyContinue)
@@ -98,44 +96,6 @@ function Test-MistralSecretStored {
     return $false
 }
 
-function Test-SbxTemplateLoaded {
-    # 'sbx' keeps its own private image store (separate from Docker Desktop's regular
-    # image list) populated via 'sbx template load'. Checking only whether the kit's
-    # spec.yaml exists on disk is not enough -- the store can be emptied independently
-    # (e.g. 'sbx template rm', a Docker Desktop reset, or a fresh machine) while the kit
-    # files stay on disk, which reproduces the old "403 Forbidden: pull failed" error.
-    # 'sbx template ls' prints: REPOSITORY  TAG  IMAGE ID  FLAVOR  CREATED
-    param(
-        [Parameter(Mandatory = $true)][string]$ImageTag
-    )
-
-    $repo, $tag = $ImageTag -split ':', 2
-    if (-not $tag) { $tag = "latest" }
-
-    $lines = & sbx template ls 2>$null
-    foreach ($line in $lines) {
-        $cols = $line -split '\s+'
-        if ($cols.Count -lt 2) { continue }
-        # The store namespaces local builds under a registry-style prefix, e.g.
-        # 'docker.io/library/sbx-mistral-vibe' for a plain 'sbx-mistral-vibe' tag, so
-        # match on the repository *suffix* rather than requiring an exact string match.
-        if (($cols[0] -eq $repo -or $cols[0].EndsWith("/$repo")) -and $cols[1] -eq $tag) {
-            return $true
-        }
-    }
-    return $false
-}
-
-function Write-KitFile {
-    param(
-        [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][string]$Content
-    )
-
-    Set-Content -LiteralPath $Path -Value $Content -NoNewline
-    Write-Host "Wrote '$Path'." -ForegroundColor Green
-}
-
 if (-not (Test-SbxInstalled)) {
     Write-Error "The 'sbx' CLI (Docker Sandboxes) was not found on PATH. Install it first, e.g. 'winget install -h Docker.sbx' (see new-cli-sbx.ps1), or: https://docs.docker.com/ai/sandboxes/install/"
     exit 1
@@ -147,68 +107,25 @@ if (-not (Test-DockerInstalled)) {
 }
 
 $kitDir = Join-Path -Path $PSScriptRoot -ChildPath "sbx-kits\mistral-vibe"
-New-Item -ItemType Directory -Path $kitDir -Force | Out-Null
-
 $dockerfilePath = Join-Path -Path $kitDir -ChildPath "Dockerfile"
 $specPath = Join-Path -Path $kitDir -ChildPath "spec.yaml"
 
-$dockerfileContent = @"
-# syntax=docker/dockerfile:1
-ARG BASE_IMAGE=docker/sandbox-templates:shell
-FROM `${BASE_IMAGE}
+if (-not (Test-Path -LiteralPath $dockerfilePath) -or -not (Test-Path -LiteralPath $specPath)) {
+    Write-Error "Checked-in kit files are missing: expected '$dockerfilePath' and '$specPath'. These are tracked in git (not generated) -- restore them with 'git checkout -- sbx-kits\mistral-vibe' or re-clone the repo."
+    exit 1
+}
 
-# Pin the agent version for reproducible sandboxes.
-# Check https://pypi.org/project/mistral-vibe/ and bump as needed.
-ARG VIBE_VERSION=$VibeVersion
-
-# Install Vibe as the non-root agent user. The socks extra is installed
-# explicitly so the agent works through the sandbox proxy.
-USER agent
-RUN uv tool install "mistral-vibe==`${VIBE_VERSION}" --with "httpx[socks]" \
-    && vibe --version
-
-CMD ["vibe", "--agent", "auto-approve"]
-"@
-
-$specContent = @"
-schemaVersion: "2"
-kind: sandbox
-name: mistral-vibe
-displayName: Mistral Vibe
-
-sandbox:
-  image: $ImageTag
-  entrypoint: ["vibe", "--agent", "auto-approve"]
-
-agentInstructions:
-  filename: AGENTS.md
-  content: |
-    You are running inside an isolated Docker Sandbox microVM.
-    Network access is restricted to the Mistral API. Prefer tools and
-    packages already available in the workspace.
-
-permissions:
-  network:
-    allow:
-      - "api.mistral.ai:443"
-
-credentials:
-  - service: mistral
-    apiKey:
-      name: MISTRAL_API_KEY
-      inject:
-        - domain: api.mistral.ai
-          scheme: bearer
-"@
-
-Write-KitFile -Path $dockerfilePath -Content $dockerfileContent
-Write-KitFile -Path $specPath -Content $specContent
+$ImageTag = Get-SpecImageTag -SpecPath $specPath
+if (-not $ImageTag) {
+    Write-Error "Could not find a 'sandbox.image:' value in '$specPath'."
+    exit 1
+}
 
 $skipBuild = $false
 if (-not $Force -and (Test-SbxTemplateLoaded -ImageTag $ImageTag)) {
     Write-Host ""
     Write-Host "Image '$ImageTag' is already loaded into sbx's template store ('sbx template ls')." -ForegroundColor Green
-    Write-Host -NoNewline "Rebuild and reload it anyway, e.g. to pick up a new -VibeVersion? (y/N): "
+    Write-Host -NoNewline "Rebuild and reload it anyway? (y/N): "
     $rebuildAnswer = Read-Host
     if ($rebuildAnswer -notmatch '^(y|yes)$') {
         $skipBuild = $true
@@ -218,8 +135,8 @@ if (-not $Force -and (Test-SbxTemplateLoaded -ImageTag $ImageTag)) {
 
 if (-not $skipBuild) {
     Write-Host ""
-    Write-Host "Building local image '$ImageTag' (VIBE_VERSION=$VibeVersion)..." -ForegroundColor Cyan
-    & docker build -t $ImageTag --build-arg "VIBE_VERSION=$VibeVersion" $kitDir
+    Write-Host "Building local image '$ImageTag' from '$kitDir'..." -ForegroundColor Cyan
+    & docker build -t $ImageTag $kitDir
     $buildExitCode = $LASTEXITCODE
 
     if ($buildExitCode -ne 0) {
