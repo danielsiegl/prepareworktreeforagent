@@ -102,6 +102,20 @@ git -C <worktree-path> commit -m "..."
 
 Then push to `origin` with your own credentials when ready.
 
+> [!NOTE]
+> **Why not `sbx run --branch`?** A few blog posts/articles about Docker
+> Sandboxes mention a `--branch`/`--worktree` flag that has `sbx` create and
+> manage the host worktree itself (under a `.sbx\` folder, cleaned up
+> automatically by `sbx rm`). That flag **does not exist** in the installed
+> `sbx` CLI used/tested with this repo (`v0.47.0` — confirmed by inspecting
+> the full `sbx run --help` output, which has no `--branch`/`--worktree`
+> flag). It may be a future/experimental feature not yet released, or
+> specific to a different build. If a future `sbx` version ships it, it
+> could replace this script's own worktree creation (`worktree-lib.ps1`) —
+> but until then, this script manages the worktree itself and uses the
+> `git-block` kit to keep the agent from touching git, exactly as described
+> above.
+
 `vibe` doesn't use a `sbx`-builtin agent template (there isn't one). Instead,
 this script automatically uses the local sandbox kit built by
 `build-vibe-sbx-kit.ps1` (see below), referencing it by path, e.g.
