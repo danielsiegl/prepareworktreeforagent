@@ -21,6 +21,7 @@ The following scripts are available:
 | `start-vibe-sbx.ps1` | Windows (PowerShell) — shortcut for `start-sbx.ps1 -Cli vibe` |
 | `build-vibe-sbx-kit.ps1` | Windows (PowerShell) — one-time setup: builds a local Docker Sandbox image/kit for Mistral Vibe, since `sbx` has no built-in template for it |
 | `worktree-lib.ps1` | Windows (PowerShell) — shared helper module (not run directly) with the git worktree create/reuse logic used by both `new-cli-worktree.ps1` and `start-sbx.ps1` (worktree mode) |
+| `sbx-kits\git-block\spec.yaml` | Docker Sandbox mixin kit (not run directly) — used automatically by `start-sbx.ps1 -Mode worktree` to disable `git` inside the sandbox without touching the host's `.git` |
 
 ## Usage
 
@@ -79,9 +80,27 @@ The script creates (or reuses) a git branch/worktree on the host named
 `<current-branch>-<cli>` in a sibling directory — the same logic
 `new-cli-worktree.ps1` uses (shared via `worktree-lib.ps1`) — then runs
 `sbx run` **without** `--clone`, mounting that worktree directory directly.
-The agent's commits land straight on the host worktree's branch, so there's
-no post-session `git fetch` step: just push from the host worktree directly
-when you're ready.
+
+A linked worktree's `.git` is just a pointer file to the *main* repo's
+`.git\worktrees\<name>` directory on the host — a path that doesn't exist
+inside the sandbox. Without any workaround, git itself would look
+broken/uninitialized to the agent inside the container. Rather than
+touching that file on the host (which would also block *your own* git
+access to the worktree while the sandbox is running), the script adds the
+local `sbx-kits\git-block` mixin kit (`--kit sbx-kits\git-block`), which
+replaces the `git` binary **inside the sandbox only** with a stub that
+refuses to run. The agent just edits plain files; your host's `.git` is
+never touched and keeps full, uninterrupted git access to the real worktree
+the whole time — even while the sandbox session is still running. Review,
+stage, and commit the changes yourself on the host whenever you like, e.g.:
+
+```powershell
+git -C <worktree-path> status
+git -C <worktree-path> add -A
+git -C <worktree-path> commit -m "..."
+```
+
+Then push to `origin` with your own credentials when ready.
 
 `vibe` doesn't use a `sbx`-builtin agent template (there isn't one). Instead,
 this script automatically uses the local sandbox kit built by
@@ -149,9 +168,13 @@ browser login; not automated by this script).
 > read-only host mount, so it works).
 >
 > In **`worktree` mode**, the worktree directory is mounted directly (not
-> read-only), so the agent's commits land straight on that branch — no
-> post-session fetch step is needed. Push to `origin` from the host worktree
-> yourself when ready.
+> read-only), and git is disabled for the agent *inside the sandbox only*
+> (see above) — your host's `.git` is never modified, so there's nothing to
+> fetch and nothing blocking you from using git on the worktree from the
+> host at any time, including while the sandbox is still running. The
+> agent's file edits sit in the host worktree as uncommitted changes.
+> Review, stage, and commit them yourself on the host, then push to `origin`
+> when ready.
 
 ### `start-vibe-sbx.ps1` — shortcut for Mistral Vibe
 

@@ -1,0 +1,26 @@
+schemaVersion: "2"
+kind: mixin
+name: git-block
+displayName: Disable git
+description: >-
+  Replaces the 'git' binary inside the sandbox with a stub that refuses to run.
+  Used in worktree mode so the agent cannot touch git directly while the host
+  keeps full, untouched git access to the real worktree for the whole session.
+
+setup:
+  install:
+    - description: Replace 'git' with a stub that refuses to run.
+      user: "0"
+      command: |
+        set -e
+        STUB='#!/bin/sh
+        echo "git is disabled inside this sandbox (worktree mode)." >&2
+        echo "Edit files directly - use git from your host machine to review, stage, and commit your changes." >&2
+        exit 1
+        '
+        for g in /usr/bin/git /usr/local/bin/git "$(command -v git 2>/dev/null || true)"; do
+          if [ -n "$g" ] && [ -e "$g" ]; then
+            printf '%s' "$STUB" > "$g"
+            chmod +x "$g"
+          fi
+        done

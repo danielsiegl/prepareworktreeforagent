@@ -1,1 +1,4 @@
-/sbx-kits/
+/sbx-kits/*
+# git-block is static, authored source (ships with the repo for -Mode worktree),
+# unlike the other sbx-kits entries which are generated build artifacts.
+!/sbx-kits/git-block/

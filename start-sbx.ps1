@@ -20,8 +20,15 @@
     - `worktree` (host worktree, like new-cli-worktree.ps1): the script creates (or
       reuses) a git branch/worktree on the host named `<current-branch>-<cli>` in a
       sibling directory, then runs `sbx run` *without* `--clone`, mounting that worktree
-      directory directly. The agent's commits land directly on the host worktree's
-      branch, so no post-session `git fetch` step is needed.
+      directory directly. A linked worktree's `.git` is just a pointer file to the
+      *main* repo's `.git\worktrees\<name>` directory on the host — a path that doesn't
+      exist inside the sandbox — so git itself would otherwise look broken/uninitialized
+      to the agent. Rather than touching that file on the host (which would also block
+      your own git access to the worktree while the sandbox is running), the script adds
+      the local `sbx-kits\git-block` mixin kit, which replaces the `git` binary *inside
+      the sandbox* with a stub that refuses to run. The agent just edits plain files;
+      the host keeps full, uninterrupted git access to the real worktree the whole time.
+      Review, stage, and commit the changes yourself on the host whenever you like.
 
     If the `sbx` CLI is not installed, the script attempts to install it via winget
     (`winget install -h Docker.sbx`).
@@ -38,9 +45,12 @@
 
 .PARAMETER Mode
     How the repository is made available to the sandbox. Valid values: clone, worktree.
-    - clone: isolated in-sandbox clone (default sbx behavior); no host worktree created.
+    - clone: isolated in-sandbox clone (default sbx behavior); no host worktree created;
+      the agent can use git inside the sandbox.
     - worktree: creates/reuses a host git worktree (like new-cli-worktree.ps1) and mounts
-      it directly, without `--clone`.
+      it directly, without `--clone`. Git is disabled for the agent inside the sandbox
+      (see the git-block kit note below); the host keeps full, untouched git access to
+      the worktree the whole time.
     If omitted, the script prompts interactively.
 
 .EXAMPLE
@@ -64,8 +74,12 @@
     directly to origin itself if you give it push access/credentials, since that goes out
     over the network rather than through the read-only host mount.)
 
-    In worktree mode, the host worktree/branch is created before the sandbox starts, and
-    the agent's commits land directly on it — no post-session fetch step is needed.
+    In worktree mode, the host worktree/branch is created before the sandbox starts.
+    The `sbx-kits\git-block` mixin kit disables the `git` command inside the sandbox
+    (the agent only edits files there - it cannot run git itself in this mode), while
+    the host's `.git` stays completely untouched, so you can use git on the worktree
+    from the host at any time, even while the sandbox is still running. Review, stage,
+    commit, and push the resulting file changes yourself on the host whenever you like.
 #>
 param(
     [string]$repopath,
@@ -128,8 +142,9 @@ function Read-CliChoice {
 function Read-ModeChoice {
     Write-Host ""
     Write-Host "Select sandbox mode:" -ForegroundColor Cyan
-    Write-Host "  1) clone    - isolated in-sandbox clone (no host worktree, fast)"
-    Write-Host "  2) worktree - mount a host git worktree (like new-cli-worktree.ps1)"
+    Write-Host "  1) clone    - isolated in-sandbox clone (no host worktree, fast); agent can use git"
+    Write-Host "  2) worktree - mount a host git worktree (like new-cli-worktree.ps1); git is disabled"
+    Write-Host "                for the agent in this mode (host keeps full git access throughout)"
     Write-Host ""
 
     while ($true) {
@@ -361,6 +376,15 @@ if ($Mode -eq "worktree") {
     $cloneArgs = @()
 }
 
+$kitArgs = @()
+if ($Mode -eq "worktree") {
+    # Disable git *inside the sandbox only* via the git-block mixin kit (see spec.yaml):
+    # it stubs out the 'git' binary in the container so the agent can't use it, while the
+    # host's '.git' is never touched, so the host retains full git access throughout.
+    $gitBlockKitDir = Join-Path -Path $PSScriptRoot -ChildPath "sbx-kits\git-block"
+    $kitArgs = @("--kit", $gitBlockKitDir)
+}
+
 $agentArg = $Cli
 $pullArgs = @()
 if ($Cli -eq "vibe") {
@@ -412,8 +436,11 @@ Write-Host "Mode       : $Mode"
 if ($Mode -eq "worktree") {
     Write-Host "Starting '$Cli' in Docker Sandbox (worktree mode) '$sandboxName', mounting worktree '$mountPath'..."
     Write-Host "Note: the agent works directly on the host worktree/branch '$suggestedBranch' - no '--clone' is used." -ForegroundColor Cyan
-    Write-Host "Since the worktree is mounted directly (not read-only), the agent's commits land" -ForegroundColor Cyan
+    Write-Host "Since the worktree is mounted directly (not read-only), the agent's edits land" -ForegroundColor Cyan
     Write-Host "directly on this branch - no post-session 'git fetch' step is needed." -ForegroundColor Cyan
+    Write-Host "The 'git-block' kit disables git inside the sandbox, so the agent just edits files;" -ForegroundColor Cyan
+    Write-Host "your host keeps full git access to this worktree the whole time - review and commit" -ForegroundColor Cyan
+    Write-Host "the changes yourself whenever you like, even while the sandbox is still running." -ForegroundColor Cyan
 }
 else {
     Write-Host "Starting '$Cli' in Docker Sandbox (clone mode) '$sandboxName' for repo '$repoRoot'..."
@@ -426,14 +453,18 @@ else {
     Write-Host "will automatically run 'git fetch' from the host once the sandbox session ends." -ForegroundColor Yellow
 }
 
-& sbx run @cloneArgs --name $sandboxName @pullArgs $agentArg $mountPath
+& sbx run @cloneArgs --name $sandboxName @pullArgs @kitArgs $agentArg $mountPath
 $sbxExitCode = $LASTEXITCODE
 
 if ($Mode -eq "worktree") {
     Write-Host ""
-    Write-Host "Sandbox session ended. The agent's commits are already on the host worktree:" -ForegroundColor Cyan
+    Write-Host "Sandbox session ended. The host worktree is unchanged and ready to use:" -ForegroundColor Cyan
     Write-Host "      $mountPath (branch '$suggestedBranch')" -ForegroundColor Cyan
-    Write-Host "Push to origin with your own credentials when ready." -ForegroundColor Cyan
+    Write-Host "Git was disabled for the agent, so any changes are uncommitted file edits." -ForegroundColor Cyan
+    Write-Host "Review, stage, and commit them yourself, e.g.:" -ForegroundColor Cyan
+    Write-Host "      git -C `"$mountPath`" status" -ForegroundColor Cyan
+    Write-Host "      git -C `"$mountPath`" add -A; git -C `"$mountPath`" commit -m `"...`"" -ForegroundColor Cyan
+    Write-Host "Then push to origin with your own credentials." -ForegroundColor Cyan
 }
 else {
     Write-Host ""
