@@ -4,7 +4,7 @@ FROM ${BASE_IMAGE}
 
 # Pin the agent version for reproducible sandboxes.
 # Check https://pypi.org/project/mistral-vibe/ and bump as needed.
-ARG VIBE_VERSION=2.25.8
+ARG VIBE_VERSION=2.26.0
 
 # .NET SDK channel/version to install (e.g. "10.0"). Installed via Microsoft's
 # dotnet-install.sh script rather than apt, since the apt feed often lags behind
