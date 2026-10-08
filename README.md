@@ -105,6 +105,16 @@ git -C <worktree-path> commit -m "..."
 
 Then push to `origin` with your own credentials when ready.
 
+Both modes reuse the same sandbox name (`<repo>-<cli>`), so switching modes
+for the same repo+CLI (e.g. `worktree` then `clone`) could otherwise make
+`sbx run` try to attach to the previous mode's stale sandbox — whose
+workspace (a host worktree directory) may since have been removed, failing
+with `422 Unprocessable Entity: workspace directory "..." no longer exists
+on the host`. The script checks `sbx ls --json` before each run and
+automatically removes (`sbx rm`) any existing sandbox of that name whose
+workspace is missing or doesn't match the mode you're starting, so a fresh
+sandbox is created instead.
+
 > [!NOTE]
 > **Why not `sbx run --branch`?** A few blog posts/articles about Docker
 > Sandboxes mention a `--branch`/`--worktree` flag that has `sbx` create and

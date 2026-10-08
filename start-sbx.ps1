@@ -266,6 +266,76 @@ function Install-SbxIfMissing {
     return $false
 }
 
+function Remove-StaleSbxSandbox {
+    # 'sbx run --name <name>' attaches to an existing sandbox of that name instead of
+    # creating a fresh one, even if that sandbox's workspace no longer matches (or no
+    # longer exists). This bites when switching between '-Mode clone' and '-Mode
+    # worktree' for the same repo+CLI: both use the same sandbox name ('<repo>-<cli>'),
+    # but worktree mode's workspace is a host worktree directory that may since have
+    # been removed, and clone mode's workspace is the main repo root. Attaching to the
+    # stale sandbox then fails with '422 Unprocessable Entity: workspace directory ...
+    # no longer exists on the host'. Detect that case up front and 'sbx rm' it so 'sbx
+    # run' creates a fresh sandbox bound to the correct workspace.
+    param(
+        [Parameter(Mandatory = $true)][string]$SandboxName,
+        [Parameter(Mandatory = $true)][string]$ExpectedWorkspace
+    )
+
+    $json = & sbx ls --json 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $json) {
+        return
+    }
+
+    try {
+        $parsed = $json | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        return
+    }
+
+    $existing = $parsed.sandboxes | Where-Object { $_.name -eq $SandboxName } | Select-Object -First 1
+    if (-not $existing) {
+        return
+    }
+
+    $normalizedExpected = Normalize-PathForComparison -Path $ExpectedWorkspace
+    $workspaceMatches = $false
+    foreach ($workspace in @($existing.workspaces)) {
+        if ($workspace -and (Normalize-PathForComparison -Path $workspace) -eq $normalizedExpected) {
+            $workspaceMatches = $true
+            break
+        }
+    }
+
+    if ($existing.workspace_missing -or -not $workspaceMatches) {
+        Write-Host "Found stale sandbox '$SandboxName' from a previous run (workspace: $($existing.workspaces -join ', ')), which no longer matches/exists. Removing it so a fresh sandbox can be created..." -ForegroundColor Yellow
+        # Run in a job so a hung 'sbx rm' (no output) can't block the script forever.
+        $timeoutSeconds = 60
+        $job = Start-Job -ScriptBlock {
+            param($Name)
+            & sbx rm --force $Name 2>&1 | ForEach-Object { "$_" }
+            "__EXIT__$LASTEXITCODE"
+        } -ArgumentList $SandboxName
+
+        if (Wait-Job -Job $job -Timeout $timeoutSeconds) {
+            $lines = @(Receive-Job -Job $job)
+            Remove-Job -Job $job -Force
+            $exitLine = $lines | Where-Object { $_ -like '__EXIT__*' } | Select-Object -Last 1
+            $lines | Where-Object { $_ -notlike '__EXIT__*' } | ForEach-Object { Write-Host "  $_" }
+            $exitCode = if ($exitLine) { [int]($exitLine -replace '__EXIT__', '') } else { 1 }
+            if ($exitCode -ne 0) {
+                Write-Warning "Failed to remove stale sandbox '$SandboxName' (exit code $exitCode). 'sbx run' may fail below; if so, run 'sbx rm $SandboxName' manually and retry."
+            }
+        }
+        else {
+            Stop-Job -Job $job
+            Remove-Job -Job $job -Force
+            Write-Warning "Removing stale sandbox '$SandboxName' did not finish within $timeoutSeconds seconds; giving up. Run 'sbx rm $SandboxName' manually and retry."
+            exit 1
+        }
+    }
+}
+
 function Get-MainRepoRoot {
     # 'sbx run --clone' refuses to run from a linked git worktree. Resolve whatever
     # path we were given (main repo or a linked worktree) to the main repository's
@@ -403,6 +473,8 @@ else {
     Write-Host "so 'git fetch'/'git pull' will fail if the agent runs them itself. This script" -ForegroundColor Yellow
     Write-Host "will automatically run 'git fetch' from the host once the sandbox session ends." -ForegroundColor Yellow
 }
+
+Remove-StaleSbxSandbox -SandboxName $sandboxName -ExpectedWorkspace $mountPath
 
 & sbx run @cloneArgs --name $sandboxName @pullArgs $agentArg $mountPath
 $sbxExitCode = $LASTEXITCODE
