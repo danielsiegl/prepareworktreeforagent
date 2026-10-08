@@ -245,7 +245,7 @@ does not generate or edit them:
 It:
 
 1. Reads the image tag to build from `spec.yaml`'s `sandbox.image:` field
-   (e.g. `sbx-mistral-vibe:2.25.8-dotnet10.0`), so the Dockerfile and
+   (e.g. `sbx-mistral-vibe:2.26.0-dotnet10.0`), so the Dockerfile and
    spec.yaml stay the single source of truth for versions — no script
    parameters to keep in sync with them.
 2. Checks `sbx template ls` to see whether that tag is **already loaded**
